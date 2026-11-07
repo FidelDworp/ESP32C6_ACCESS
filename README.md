@@ -81,6 +81,7 @@ Overgenomen uit de aanpak van de andere Zarlar-controllers (zie `ESP32C6_ROOMS/R
 
 - ESP32-C6 op het **Zarlar shield**, Arduino IDE.
 - **Een ESP32-pin ziet nooit meer dan 3,3 V.** Voor de LED-modules buiten komt er een **buffer 3,3 → 5 V** (74AHCT1G125 of 74HCT125).
+- **Zonlicht (TSL2561, lux):** hoort voortaan op een ACCESS- of OUTSIDE-controller, niet meer op een room (beslist 7/11/2026, zie `ESP32C6_ROOMS/ROOM_STANDAARD.md`). Te bekijken bij het ontwerp: welke ACCESS-controller de sensor krijgt en of hij de lux deelt met de andere controllers.
 - **Vast IP**, **`/json`** als contract, logging via het Dashboard (de controller post zelf niets), Apple Home via de RPi-bridge (geen Matter op de ESP32).
 
 ## 6. Mapindeling
