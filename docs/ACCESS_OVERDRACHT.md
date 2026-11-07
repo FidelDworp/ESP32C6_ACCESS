@@ -1,6 +1,6 @@
 # Overdracht — ACCESS (buitenverlichting, ESP32C6_ACCESS)
 
-*Stand 7 november 2026 — Filip Delannoy (FiDel), Zarlardinge (BE)*
+*Stand 7 november 2026, 18:30 — Filip Delannoy (FiDel), Zarlardinge (BE)*
 
 Dit document start een nieuw gesprek met Claude over de buitenverlichting: de Photon R8-ACCESS van vandaag en de ESP32-controllers ACCESS1–3 die nog ontworpen moeten worden. Alle details: [`README.md`](../README.md).
 
@@ -21,15 +21,18 @@ Dit document start een nieuw gesprek met Claude over de buitenverlichting: de Ph
 - **Dashboard rij 3** (W·Z·N·O) leest `JSON_status` van R8-ACCESS via de Cloudflare Worker (`mw1`, `mw2`, `ms`, `lw1`, `lw2`, `ls`, `au`).
 - **Apple Home:** Voordeur, Veldkant en Terras via de RPi-bridge (`server.js` v2.12).
 
-## 2. Uitgangspunten voor het ontwerp
+## 2. Ontwerp: de ACCESS-standaard
 
-- ESP32-C6 op het Zarlar shield; nooit meer dan 3,3 V op een pin; **buffer 3,3 → 5 V** (74AHCT1G125 of 74HCT125) voor de LED-modules buiten.
-- Vast IP, `/json` als contract, logging via het Dashboard, Apple Home via de RPi.
-- **Zonlicht (TSL2561, lux)** hoort voortaan op een ACCESS- of OUTSIDE-controller, niet op een room (7/11). Kiezen welke en of de lux gedeeld wordt.
+Zie [`ACCESS_STANDAARD.md`](ACCESS_STANDAARD.md) (v0.1, voorstel 7/11). **Beslist door FiDel (7/11):**
+- Uitgangen: **PWM naar LED-drivers van 300 mA** (2 lampen 12 V / 3 W in serie op 24 V); de drivers werken op de Photon met 3,3 V → eerst zonder buffer, buffer naar 5 V alleen als nodig.
+- **Luxsensor (TSL2561)** normaal op ACCESS1, mogelijk op ACCESS2 of 3: waar hij het daglicht het best permanent ziet.
+- **AUTO alleen 's nachts**, tenzij manueel aangezet (**override zoals in de ROOM-sketch**).
+
+Nog te beslissen: zie §6 van de standaard (zone N1, testbord, PWM-frequentie) en de `/json`-keys (§3.1), vóór v0.2.
 
 ## 3. Open punten (vóór het ontwerp van ACCESS1)
 
 1. Terraslicht (S) gaat niet aan, ook niet via Apple Home: andere oorzaak, te onderzoeken.
 2. Koppeling W1 → W2 nagaan (`lw2` bleef 0 bij beweging aan de voordeur).
 3. PIR W2 volgens de code defect.
-4. Ontwerp ACCESS1: plaats, aansluitingen, zones als instellingen, `/json`-keys (afstemmen op rij 3 van het Dashboard).
+4. Open vragen en keys van de standaard bevestigen; daarna plan + GO voor v0.1.

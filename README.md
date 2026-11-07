@@ -75,14 +75,14 @@ Zolang de bron niet online is (pixel 1 en 5 geel of rood), blijven pixels 2–4 
 2. **Koppeling W1 → W2:** volgens de code zet beweging aan W1 ook W2 aan ("tot de W2-PIR hersteld is"), maar het W2-blok zet W2 meteen weer uit zonder eigen beweging. Bij een test op 6/11 bleef `lw2` op 0, terwijl er 4 lampen links en rechts van de voordeur branden. Nagaan welke lampen W1 en welke W2 zijn, en of de koppeling werkt.
 3. **PIR W2:** volgens het commentaar in de code is die defect.
 
-## 5. Uitgangspunten voor het ontwerp
+## 5. De ACCESS-standaard (ontwerp)
 
-Overgenomen uit de aanpak van de andere Zarlar-controllers (zie `ESP32C6_ROOMS/docs/ROOM_STANDAARD.md` en het Master-document). Nog te bevestigen bij het ontwerp.
+Hardware, gedrag en stappenplan staan in [`docs/ACCESS_STANDAARD.md`](docs/ACCESS_STANDAARD.md) (v0.1, voorstel van 7/11/2026). Kort:
 
-- ESP32-C6 op het **Zarlar shield**, Arduino IDE.
-- **Een ESP32-pin ziet nooit meer dan 3,3 V.** Voor de LED-modules buiten komt er een **buffer 3,3 → 5 V** (74AHCT1G125 of 74HCT125).
-- **Zonlicht (TSL2561, lux):** hoort voortaan op een ACCESS- of OUTSIDE-controller, niet meer op een room (beslist 7/11/2026, zie `ESP32C6_ROOMS/docs/ROOM_STANDAARD.md`). Te bekijken bij het ontwerp: welke ACCESS-controller de sensor krijgt en of hij de lux deelt met de andere controllers.
-- **Vast IP**, **`/json`** als contract, logging via het Dashboard (de controller post zelf niets), Apple Home via de RPi-bridge (geen Matter op de ESP32).
+- **4 zoneslots** op vaste pinnen, identiek op elke controller: PIR-ingang + PWM-uitgang naar een **LED-driver van 300 mA** (2 × 12 V / 3 W in serie op 24 V). Sturing op **3,3 V**, zoals de Photon; buffer naar 5 V alleen als een test dat nodig maakt.
+- **AUTO = alleen 's nachts** (beslist), **MANUEEL AAN** als override zoals in de ROOM-sketch (beslist).
+- **Lux:** één **TSL2561** op de controller met het beste zicht op het daglicht (normaal ACCESS1). De andere lezen de lux via `/json`; valt die weg, dan berekenen ze zelf zonsopgang en -ondergang.
+- Stappen: v0.1 basis → v0.2 zones → v0.3 dag/nacht → v0.4 plaatsen als ACCESS1.
 
 ## 6. Mapindeling
 
@@ -90,5 +90,5 @@ Overgenomen uit de aanpak van de andere Zarlar-controllers (zie `ESP32C6_ROOMS/d
 |---|---|
 | `README.md` | dit document |
 | `ESP32_C6_ACCESS/` | de sketch (komt na het ontwerp) |
-| `docs/` | aansluitingen, metingen (komt) |
+| `docs/` | `ACCESS_STANDAARD.md` (hardware, gedrag, stappenplan) · `ACCESS_OVERDRACHT.md` (voor een nieuw gesprek met Claude) |
 | `old/` | `R8-ACCESS.ino`: laatste Photon-sketch (6/11/2026, met `JSON_status`). Het origineel blijft in [`PHOTON_ROOMS`](https://github.com/FidelDworp/PHOTON_ROOMS) |
