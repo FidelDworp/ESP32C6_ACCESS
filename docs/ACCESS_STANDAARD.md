@@ -1,6 +1,6 @@
 # ACCESS-standaard (Zarlar buitenverlichting)
 
-*v0.1 — 7 nov 2026 — Filip Delannoy (FiDel). Status: **voorstel**, te bevestigen. Wat al beslist is, staat er als "beslist".*
+*v0.2 — 7 nov 2026 — Filip Delannoy (FiDel). Status: **voorstel**, te bevestigen (open vragen §6 beantwoord, `/json`-keys nog niet). Wat al beslist is, staat er als "beslist".*
 
 Alle buitenverlichting van Zarlardinge draait op **dezelfde hardware en dezelfde sketch** `ESP32_C6_ACCESS`, op minstens drie controllers: ACCESS1 (.82), ACCESS2 (.83) en ACCESS3 (.84). Wat per controller verschilt (zones, namen, luxsensor), is een **instelling** in `/settings` (NVS), nooit een aparte sketch. Zelfde aanpak als de [ROOM-standaard](https://github.com/FidelDworp/ESP32C6_ROOMS/blob/main/docs/ROOM_STANDAARD.md).
 
@@ -27,7 +27,7 @@ Elke controller heeft dezelfde 4 zoneslots op vaste pinnen. Een controller gebru
 | 1 | IO3 (Sense 1) | IO19 (Option 5) | **W1** Voordeur (lampen W1 + D) |
 | 2 | IO5 (Sense 2) | IO18 (Option 4) | **W2** Veldkant (lampen W3 + W4) |
 | 3 | IO2 (Option 3) | IO10 (Option 2) | **S** Terras (lampen S1 + S2) |
-| 4 | IO12 (Sense 4) | IO1 (Sense 6) | **N1** (lampen N1 + N2): bedraad, nog niet in gebruik — zie open vraag 1 |
+| 4 | IO12 (Sense 4) | IO1 (Sense 6) | **N1** (lampen N1 + N2), tussen de voordeur (W-zijde) en de N-muur: **blijft bij ACCESS1** (beslist 7/11, werkt goed). Ander stuk muur dan de noordgevel bij de B&B (ACCESS2) |
 
 - PIR-ingangen: **1 kΩ in serie**, verder niets. IO3 heeft op het shield een 4,7 kΩ pull-up (T-BUS): daar zeker niet meer dan 1 kΩ.
 - IO1 heeft op het shield een 10 kΩ pull-up naar 3V3: bij "0 V = aan" blijft dat licht uit tijdens het opstarten.
@@ -95,19 +95,22 @@ Telkens één versie, na GO, met versiekop, changelog en een 48 u-test.
 
 | Versie | Wat |
 |---|---|
-| v0.1 | **Basis:** WiFi, OTA, mDNS, `/settings`, `/json`, Diagnose (hergebruikt uit ROOM). Op een los testbord |
+| v0.1 | **Basis:** WiFi, OTA, mDNS, `/settings`, `/json`, Diagnose (hergebruikt uit ROOM). Op het testbord (§6.2) |
 | v0.2 | **Zones:** PIR, brandtijd, helderheid (PWM), AUTO/MANUEEL, meeschakelen, `/set_zone`. Nog zonder dag/nacht |
 | v0.3 | **Dag/nacht:** TSL2561, lux delen tussen de controllers, berekende terugval |
 | v0.4 | **Plaatsen als ACCESS1.** R8-ACCESS uit; `server.js` en Dashboard (rij 3) naar ACCESS1. Daarna ACCESS2 en ACCESS3 in de B&B |
 
-## 6. Open vragen (FiDel)
+## 6. Beslissingen (FiDel, 7/11)
 
-1. **Zone N1:** volgens de bedrading hangt N1 (lampen N1 + N2) aan de klemmen van ACCESS (Sense 4 en 6). Volgens de ROOM-standaard komt de noordgevel bij de B&B op ACCESS2. Zijn dat twee verschillende stukken noordmuur, of verhuist N1 naar ACCESS2?
-2. **Testbord** voor v0.1–v0.3: een losse ESP32-C6 op een shield, met een LED of één driver op tafel?
-3. **PWM-frequentie** van de drivers: onbekend. Voorstel: starten op 1 kHz en testen op geflikker en lawaai.
+1. **Zone N1** (lampen tussen de voordeur aan de W-zijde en de N-muur) **blijft bij ACCESS1**: werkt goed. De noordgevel bij de B&B is een ander stuk muur en komt op ACCESS2.
+2. **Testbord** voor v0.1–v0.3: een losse ESP32-C6 op een shield, met **één LED-driver en een LED** op een houten bordje. FiDel maakt het in de week van 9/11.
+3. **PWM-frequentie** van de drivers: **start op 1 kHz**, daarna testen op geflikker en lawaai; bijstellen indien nodig.
+
+Nog open: bevestiging van de `/json`-keys (§3.1), vóór v0.2.
 
 ## 7. Historiek
 
 | Versie | Datum | Wat |
 |---|---|---|
+| v0.2 | 7 nov 2026 | Open vragen beantwoord: N1 blijft bij ACCESS1, testbord met één driver + LED, PWM start op 1 kHz |
 | v0.1 | 7 nov 2026 | Eerste voorstel: zoneslots, LED-drivers 300 mA op 3,3 V, TSL2561 op één controller met delen en berekende terugval, AUTO alleen 's nachts, MANUEEL-override, stappenplan |

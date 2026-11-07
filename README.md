@@ -77,7 +77,7 @@ Zolang de bron niet online is (pixel 1 en 5 geel of rood), blijven pixels 2–4 
 
 ## 5. De ACCESS-standaard (ontwerp)
 
-Hardware, gedrag en stappenplan staan in [`docs/ACCESS_STANDAARD.md`](docs/ACCESS_STANDAARD.md) (v0.1, voorstel van 7/11/2026). Kort:
+Hardware, gedrag en stappenplan staan in [`docs/ACCESS_STANDAARD.md`](docs/ACCESS_STANDAARD.md) (v0.2, voorstel van 7/11/2026). Kort:
 
 - **4 zoneslots** op vaste pinnen, identiek op elke controller: PIR-ingang + PWM-uitgang naar een **LED-driver van 300 mA** (2 × 12 V / 3 W in serie op 24 V). Sturing op **3,3 V**, zoals de Photon; buffer naar 5 V alleen als een test dat nodig maakt.
 - **AUTO = alleen 's nachts** (beslist), **MANUEEL AAN** als override zoals in de ROOM-sketch (beslist).
