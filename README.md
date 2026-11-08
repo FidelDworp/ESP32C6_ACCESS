@@ -77,10 +77,11 @@ Zolang de bron niet online is (pixel 1 en 5 geel of rood), blijven pixels 2–4 
 
 ## 5. De ACCESS-standaard (ontwerp)
 
-Hardware, gedrag en stappenplan staan in [`docs/ACCESS_STANDAARD.md`](docs/ACCESS_STANDAARD.md) (v0.2, voorstel van 7/11/2026). Kort:
+Hardware, gedrag en stappenplan staan in [`docs/ACCESS_STANDAARD.md`](docs/ACCESS_STANDAARD.md) (v0.3, vastgelegd 8/11/2026). Kort:
 
 - **4 zoneslots** op vaste pinnen, identiek op elke controller: PIR-ingang + PWM-uitgang naar een **LED-driver van 300 mA** (2 × 12 V / 3 W in serie op 24 V). Sturing op **3,3 V**, zoals de Photon; buffer naar 5 V alleen als een test dat nodig maakt.
-- **AUTO = alleen 's nachts** (beslist), **MANUEEL AAN** als override zoals in de ROOM-sketch (beslist).
+- **Zones:** ACCESS1 = `S`, `W4`, `D` (voordeur) · ACCESS2 = `W1`, `N1` · ACCESS3 = `N2`, `E`. `/json`: `m<zone>`, `l<zone>` (0–100 %), `au`.
+- **AUTO = nacht én beweging**, **MANUEEL** als override (één modus per controller, max. 30 min, instelbaar).
 - **Lux:** één **TSL2561** op de controller met het beste zicht op het daglicht (normaal ACCESS1). De andere lezen de lux via `/json`; valt die weg, dan berekenen ze zelf zonsopgang en -ondergang.
 - Stappen: v0.1 basis → v0.2 zones → v0.3 dag/nacht → v0.4 plaatsen als ACCESS1.
 

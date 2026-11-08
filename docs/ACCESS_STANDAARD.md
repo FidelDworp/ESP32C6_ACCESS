@@ -1,6 +1,6 @@
 # ACCESS-standaard (Zarlar buitenverlichting)
 
-*v0.2 — 7 nov 2026 — Filip Delannoy (FiDel). Status: **voorstel**, te bevestigen (open vragen §6 beantwoord, `/json`-keys nog niet). Wat al beslist is, staat er als "beslist".*
+*v0.3 — 8 nov 2026 — Filip Delannoy (FiDel). Status: **vastgelegd** (zones, `/json`-keys, gedrag). Wijzigen alleen met akkoord van FiDel.*
 
 Alle buitenverlichting van Zarlardinge draait op **dezelfde hardware en dezelfde sketch** `ESP32_C6_ACCESS`, op minstens drie controllers: ACCESS1 (.82), ACCESS2 (.83) en ACCESS3 (.84). Wat per controller verschilt (zones, namen, luxsensor), is een **instelling** in `/settings` (NVS), nooit een aparte sketch. Zelfde aanpak als de [ROOM-standaard](https://github.com/FidelDworp/ESP32C6_ROOMS/blob/main/docs/ROOM_STANDAARD.md).
 
@@ -22,12 +22,28 @@ Alle buitenverlichting van Zarlardinge draait op **dezelfde hardware en dezelfde
 
 Elke controller heeft dezelfde 4 zoneslots op vaste pinnen. Een controller gebruikt alleen de slots die hij nodig heeft. Zo is de hardware van ACCESS1, 2 en 3 identiek.
 
-| Slot | PIR-ingang | PWM-uitgang | ACCESS1 vandaag (klemmen R8) |
+| Slot | PIR-ingang | PWM-uitgang | ACCESS1 (vandaag op R8: PIR / PWM) |
 |---|---|---|---|
-| 1 | IO3 (Sense 1) | IO19 (Option 5) | **W1** Voordeur (lampen W1 + D) |
-| 2 | IO5 (Sense 2) | IO18 (Option 4) | **W2** Veldkant (lampen W3 + W4) |
-| 3 | IO2 (Option 3) | IO10 (Option 2) | **S** Terras (lampen S1 + S2) |
-| 4 | IO12 (Sense 4) | IO1 (Sense 6) | **N1** (lampen N1 + N2), tussen de voordeur (W-zijde) en de N-muur: **blijft bij ACCESS1** (beslist 7/11, werkt goed). Ander stuk muur dan de noordgevel bij de B&B (ACCESS2) |
+| 1 | IO3 (Sense 1) | IO19 (Option 5) | **D** Voordeur (MOV-W1 / PWM-W1) |
+| 2 | IO5 (Sense 2) | IO18 (Option 4) | **W4** Veldkant (MOV-W2 / PWM-W2) |
+| 3 | IO2 (Option 3) | IO10 (Option 2) | **S** Terras (MOV-S / PWM-S) |
+| 4 | IO12 (Sense 4) | IO1 (Sense 6) | vrij |
+
+### 1.1.1 Zones en lampgroepen (beslist 8/11)
+
+De lampgroepen zijn die van de plattegrond op FiDels tekening *ACCESS-WASPL bedrading* (telkens een paar lampen op één module). Een **zone** = één PWM-uitgang + de PIR('s) ervoor; ze kan meerdere lampgroepen sturen. **De zonecode is overal de enige naam** van die zone: `/settings`, `/json`, bediening, Dashboard, RPi.
+
+| Controller | Zone | Lampgroepen | Muur | Toestand 8/11 |
+|---|---|---|---|---|
+| ACCESS1 (.82) | `S` | S1 + S2 | S (tuinzijde) | werkt (R8) |
+| ACCESS1 | `W4` | W4 | W (veldzijde) | werkt (R8) |
+| ACCESS1 | `D` (voordeur) | W2 + DN, DS + W3 | W | werkt (R8) |
+| ACCESS2 (.83) | `W1` | W1 | W | nog niet in gebruik |
+| ACCESS2 | `N1` | N1 | N | nog niet in gebruik |
+| ACCESS3 (.84) | `N2` | N2 | N | nog niet in gebruik |
+| ACCESS3 | `E` | E1 + E2 | E | nog niet in gebruik |
+
+ACCESS2 en ACCESS3 staan in de B&B; W1 en N1 zitten in de hoek waar ACCESS2 komt. Windrichtingen in het Engels, zoals op de tekening: **W, S, N, E**.
 
 - PIR-ingangen: **1 kΩ in serie**, verder niets. IO3 heeft op het shield een 4,7 kΩ pull-up (T-BUS): daar zeker niet meer dan 1 kΩ.
 - IO1 heeft op het shield een 10 kΩ pull-up naar 3V3: bij "0 V = aan" blijft dat licht uit tijdens het opstarten.
@@ -46,10 +62,10 @@ Elke controller heeft dezelfde 4 zoneslots op vaste pinnen. Een controller gebru
 
 | Modus | Wat |
 |---|---|
-| **AUTO** (standaard) | **Beslist: alleen 's nachts.** Beweging → licht aan op de ingestelde helderheid, uit na de brandtijd sinds de laatste beweging (standaard 30 s, zoals R8). Overdag gebeurt er niets |
-| **MANUEEL AAN** (override) | **Beslist:** zoals in de ROOM-sketch. Licht aan, dag of nacht, tot je het manueel uitzet; dan terug naar AUTO |
+| **AUTO** (standaard) | **Beslist: nacht én beweging** (zoals de ROOM-sketch: donker én beweging). Licht aan op de ingestelde helderheid, uit na de brandtijd sinds de laatste beweging. Overdag gebeurt er niets |
+| **MANUEEL** (override) | **Beslist 8/11:** een zone manueel aan, dag of nacht. **Eén modus voor de hele controller** (`au`), zoals R8. Na de override-tijd (standaard **30 min**, instelbaar) of bij manueel uit: terug naar AUTO. Lampen die door een PIR aan gingen, gaan ook in MANUEEL uit na hun brandtijd |
 
-Per zone in `/settings`: naam · muur (W, Z, N, O) · aan/uit · helderheid (%) · brandtijd · polariteit · **meeschakelen met een andere zone** (vandaag schakelt W1 ook W2 mee, zie open punten).
+Per zone in `/settings`: zonecode · muur (W, S, N, E) · aan/uit · helderheid (%) · brandtijd (standaard 30 s, zoals R8) · polariteit. Per controller: override-tijd. Geen meeschakelen tussen zones (de koppeling W1 → W2 van R8 vervalt).
 
 ### 2.2 Dag of nacht
 
@@ -65,24 +81,30 @@ De bron die in gebruik is, staat in de UI en in `/json`.
 
 - **Eén sketch** `ESP32_C6_ACCESS`, zelfde basis als de andere ESP32-sketches: vast IP, mDNS (`access1.local` …), `/settings`, `/update` (OTA), Diagnose (herstartreden, geheugen, WiFi), geen Matter.
 - **Apple Home** via de RPi-bridge (`server.js`), zoals nu voor R8-ACCESS.
-- **Dashboard:** rij 3 (W·Z·N·O) leest later `/json` van ACCESS1–3 in plaats van de Photon.
+- **Dashboard:** rij 3 (de 4 muren) leest later `/json` van ACCESS1–3 in plaats van de Photon, met de muurletters **W·S·N·E** (nu W·Z·N·O). Eigen Dashboard-versie, eigen GO.
 - **De lux in `/json`**, zodat ook het Dashboard, de ECO en anderen hem kunnen lezen. Daarmee is een aparte OUTSIDE-controller (.72) waarschijnlijk overbodig.
-- **`/json` is een contract.** Keys en bedieningsadressen worden vastgelegd vóór v0.2 en daarna niet meer gewijzigd zonder akkoord. Een uitgeschakelde zone voert geen code uit, maar haar keys blijven bestaan (waarde 0).
+- **`/json` is een contract.** Keys en bedieningsadressen worden vastgelegd vóór v0.2 en daarna niet meer gewijzigd zonder akkoord. Een controller stuurt alleen de keys van zijn eigen zones.
 
-### 3.1 Voorstel `/json`-keys en bediening (te bevestigen)
+### 3.1 `/json`-keys en bediening (beslist 8/11)
+
+Per zone: **`m` + zonecode** en **`l` + zonecode**, in kleine letters.
 
 | Key | Betekenis |
 |---|---|
 | `a` | uptime (s) |
-| `z1m` … `z4m` | beweging in zone 1–4 in de laatste 10 min (1/0) |
-| `z1l` … `z4l` | licht zone 1–4: helderheid nu (0–100 %) |
-| `z1a` … `z4a` | modus zone 1–4: 1 = AUTO, 0 = MANUEEL |
+| `m<zone>` | beweging in de laatste 10 min (1/0): `ms`, `mw4`, `md` (ACCESS1) · `mw1`, `mn1` (ACCESS2) · `mn2`, `me` (ACCESS3) |
+| `l<zone>` | licht nu, helderheid 0–100 %: `ls`, `lw4`, `ld` · `lw1`, `ln1` · `ln2`, `le` |
+| `au` | modus van de controller: 1 = AUTO, 0 = MANUEEL |
 | `lux` | lux (−1 = geen bron) |
 | `nt` | nacht (1/0) |
 | `lb` | bron dag/nacht: 0 = eigen sensor, 1 = andere ACCESS, 2 = berekend |
 | `ac`, `ad`, `ae`, `af` | RSSI, heap %, grootste blok, laagste heap (zoals ROOM) |
 
-Bediening: `/set_zone?z=1..4&v=1` (manueel aan), `v=0` (uit, terug naar AUTO), optioneel `&b=0..100` (helderheid).
+Voorbeeld ACCESS1: `{"a":3600,"ms":0,"ls":0,"mw4":0,"lw4":0,"md":1,"ld":80,"au":1,"lux":2,"nt":1,"lb":0,…}`
+
+Bediening: `/set_zone?z=<zone>&v=1` (manueel aan, controller naar MANUEEL), `v=0` (uit, terug naar AUTO), optioneel `&b=0..100` (helderheid). Bv. `/set_zone?z=D&v=1&b=60`.
+
+**Overgang van R8:** de Photon gebruikt `mw1`/`lw1` voor de voordeur en `mw2`/`lw2` voor de veldkant. Die keys worden **niet** behouden (`lw1` betekent straks lampgroep W1 op ACCESS2). Het Dashboard en `server.js` gaan om op het moment dat ACCESS1 de Photon vervangt (v0.4).
 
 ## 4. Niet in de standaard
 
@@ -96,21 +118,34 @@ Telkens één versie, na GO, met versiekop, changelog en een 48 u-test.
 | Versie | Wat |
 |---|---|
 | v0.1 | **Basis:** WiFi, OTA, mDNS, `/settings`, `/json`, Diagnose (hergebruikt uit ROOM). Op het testbord (§6.2) |
-| v0.2 | **Zones:** PIR, brandtijd, helderheid (PWM), AUTO/MANUEEL, meeschakelen, `/set_zone`. Nog zonder dag/nacht |
+| v0.2 | **Zones:** PIR, brandtijd, helderheid (PWM), AUTO/MANUEEL met override-tijd, `/set_zone`. Nog zonder dag/nacht |
 | v0.3 | **Dag/nacht:** TSL2561, lux delen tussen de controllers, berekende terugval |
 | v0.4 | **Plaatsen als ACCESS1.** R8-ACCESS uit; `server.js` en Dashboard (rij 3) naar ACCESS1. Daarna ACCESS2 en ACCESS3 in de B&B |
 
-## 6. Beslissingen (FiDel, 7/11)
+## 6. Beslissingen (FiDel)
 
-1. **Zone N1** (lampen tussen de voordeur aan de W-zijde en de N-muur) **blijft bij ACCESS1**: werkt goed. De noordgevel bij de B&B is een ander stuk muur en komt op ACCESS2.
+1. **Zones en controllers** (8/11, vervangt de N1-beslissing van 7/11): zie §1.1.1. ACCESS1 = S, W4, D · ACCESS2 = W1, N1 · ACCESS3 = N2, E.
 2. **Testbord** voor v0.1–v0.3: een losse ESP32-C6 op een shield, met **één LED-driver en een LED** op een houten bordje. FiDel maakt het in de week van 9/11.
 3. **PWM-frequentie** van de drivers: **start op 1 kHz**, daarna testen op geflikker en lawaai; bijstellen indien nodig.
 
-Nog open: bevestiging van de `/json`-keys (§3.1), vóór v0.2.
+4. **`/json`-keys** (8/11): zonecode als naam, licht in %, één modus per controller (§3.1).
+5. **Manuele override** max. 30 min (instelbaar); brandtijd instelbaar (8/11).
+
+## 6.1 Afwijkingen in R8-ACCESS (Photon), opgelost door de nieuwe sketch
+
+- Beweging aan de voordeur schakelde ook de veldkant (W1 → W2, "tijdelijk"): vervalt.
+- Geen dag/nacht: de lampen gingen ook overdag aan.
+- Geen dimmen: alles aan/uit, ook op PWM-pinnen.
+- Na een manueel commando bleven lampen die door een PIR brandden, aan tot iemand terug naar AUTO schakelde.
+- Brandtijd 30 s vast in de code.
+- `lw2` bleef 0 bij beweging aan de voordeur, terwijl de code W2 mee aanzette: op het testbord de uitgangen apart controleren.
+
+**Nog na te kijken op de tekening:** de nieuwe PIR's MOV-W1, MOV-W3 en MOV-DN gaan via het PIReX-printje samen naar één ingang. Met de nieuwe zones horen W3 en DN bij `D` (ACCESS1) en W1 bij ACCESS2.
 
 ## 7. Historiek
 
 | Versie | Datum | Wat |
 |---|---|---|
+| v0.3 | 8 nov 2026 | Zones per controller en zonecodes (S, W4, D · W1, N1 · N2, E), `/json`-keys vastgelegd, één modus per controller met override-tijd, afwijkingen R8 |
 | v0.2 | 7 nov 2026 | Open vragen beantwoord: N1 blijft bij ACCESS1, testbord met één driver + LED, PWM start op 1 kHz |
 | v0.1 | 7 nov 2026 | Eerste voorstel: zoneslots, LED-drivers 300 mA op 3,3 V, TSL2561 op één controller met delen en berekende terugval, AUTO alleen 's nachts, MANUEEL-override, stappenplan |

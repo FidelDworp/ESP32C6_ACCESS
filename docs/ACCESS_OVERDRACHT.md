@@ -23,18 +23,21 @@ Dit document start een nieuw gesprek met Claude over de buitenverlichting: de Ph
 
 ## 2. Ontwerp: de ACCESS-standaard
 
-Zie [`ACCESS_STANDAARD.md`](ACCESS_STANDAARD.md) (v0.2, voorstel 7/11). **Beslist door FiDel (7/11):**
+Zie [`ACCESS_STANDAARD.md`](ACCESS_STANDAARD.md) (v0.3, vastgelegd 8/11). **Beslist door FiDel (7–8/11):**
 - Uitgangen: **PWM naar LED-drivers van 300 mA** (2 lampen 12 V / 3 W in serie op 24 V); de drivers werken op de Photon met 3,3 V → eerst zonder buffer, buffer naar 5 V alleen als nodig.
 - **Luxsensor (TSL2561)** normaal op ACCESS1, mogelijk op ACCESS2 of 3: waar hij het daglicht het best permanent ziet.
 - **AUTO alleen 's nachts**, tenzij manueel aangezet (**override zoals in de ROOM-sketch**).
 
-- **Zone N1 blijft bij ACCESS1**; testbord = losse ESP32-C6 op shield met één driver + LED op een houten bordje (FiDel maakt het week van 9/11); **PWM start op 1 kHz**.
+- **Zones (8/11):** ACCESS1 = `S` (S1+S2), `W4`, `D` voordeur (W2+DN, DS+W3) · ACCESS2 = `W1`, `N1` · ACCESS3 = `N2`, `E` (E1+E2). Zonecode = enige naam overal.
+- **`/json`:** `m<zone>` / `l<zone>` (licht 0–100 %), één modus `au` per controller, manuele override max. 30 min (instelbaar). De R8-keys `mw1`/`lw1`/`mw2`/`lw2` vervallen bij de overstap (v0.4: Dashboard + `server.js` mee om).
+- Testbord = losse ESP32-C6 op shield met één driver + LED op een houten bordje (FiDel maakt het week van 9/11); **PWM start op 1 kHz**.
 
-Nog te beslissen: de `/json`-keys (§3.1 van de standaard), vóór v0.2.
+Afwijkingen van de Photon-sketch: zie §6.1 van de standaard.
 
 ## 3. Open punten (vóór het ontwerp van ACCESS1)
 
 1. Terraslicht (S) gaat niet aan, ook niet via Apple Home: andere oorzaak, te onderzoeken.
 2. Koppeling W1 → W2 nagaan (`lw2` bleef 0 bij beweging aan de voordeur).
 3. PIR W2 volgens de code defect.
-4. `/json`-keys van de standaard bevestigen; testbord klaar → plan + GO voor v0.1.
+4. Testbord klaar → plan + GO voor v0.1.
+5. PIReX-combinatie MOV-W1 + MOV-W3 + MOV-DN nakijken (W1 gaat naar ACCESS2).
