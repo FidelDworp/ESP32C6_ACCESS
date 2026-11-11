@@ -2,7 +2,7 @@
 
 *Filip Delannoy (FiDel) — aangemaakt 6 november 2026*
 
-> **Status:** de ESP32-controllers ACCESS1–3 moeten nog ontworpen worden. Vandaag bedient de **Photon R8-ACCESS** de buitenlichten zuid en west. Zijn laatste sketch staat in [`old/R8-ACCESS.ino`](old/R8-ACCESS.ino).
+> **Status:** sketch **v0.1** (basis, 11/11/2026) voor het testbord: `bin/ESP32_C6_ACCESS_v0.1.ino.bin`, gecompileerd door Claude (ESP32-core 3.3.12, nieuwste bibliotheken). De ESP32-controllers ACCESS1–3 zijn nog niet geplaatst. Vandaag bedient de **Photon R8-ACCESS** de buitenlichten zuid en west. Zijn laatste sketch staat in [`old/R8-ACCESS.ino`](old/R8-ACCESS.ino).
 
 Overzicht van het hele systeem: [`Zarlardinge-Home-Automation`](https://github.com/FidelDworp/Zarlardinge-Home-Automation) (README en Master-document).
 
@@ -90,6 +90,7 @@ Hardware, gedrag en stappenplan staan in [`docs/ACCESS_STANDAARD.md`](docs/ACCES
 | Map | Inhoud |
 |---|---|
 | `README.md` | dit document |
-| `ESP32_C6_ACCESS/` | de sketch (komt na het ontwerp) |
+| `ESP32_C6_ACCESS/` | de sketch (ino + `partitions.csv`) |
+| `bin/` | laatste gecompileerde versie, voor OTA via `/update` |
 | `docs/` | `ACCESS_STANDAARD.md` (hardware, gedrag, stappenplan) · `ACCESS_OVERDRACHT.md` (voor een nieuw gesprek met Claude) |
 | `old/` | `R8-ACCESS.ino`: laatste Photon-sketch (6/11/2026, met `JSON_status`). Het origineel blijft in [`PHOTON_ROOMS`](https://github.com/FidelDworp/PHOTON_ROOMS) |

@@ -1,6 +1,6 @@
 # ACCESS-standaard (Zarlar buitenverlichting)
 
-*v0.3 — 8 nov 2026 — Filip Delannoy (FiDel). Status: **vastgelegd** (zones, `/json`-keys, gedrag). Wijzigen alleen met akkoord van FiDel.*
+*v0.4 — 11 nov 2026 — Filip Delannoy (FiDel). Status: **vastgelegd** (zones, `/json`-keys, gedrag). Wijzigen alleen met akkoord van FiDel. Sketch: **v0.1** (basis), voor het testbord.*
 
 Alle buitenverlichting van Zarlardinge draait op **dezelfde hardware en dezelfde sketch** `ESP32_C6_ACCESS`, op minstens drie controllers: ACCESS1 (.82), ACCESS2 (.83) en ACCESS3 (.84). Wat per controller verschilt (zones, namen, luxsensor), is een **instelling** in `/settings` (NVS), nooit een aparte sketch. Zelfde aanpak als de [ROOM-standaard](https://github.com/FidelDworp/ESP32C6_ROOMS/blob/main/docs/ROOM_STANDAARD.md).
 
@@ -48,6 +48,24 @@ ACCESS2 en ACCESS3 staan in de B&B; W1 en N1 zitten in de hoek waar ACCESS2 komt
 - PIR-ingangen: **1 kΩ in serie**, verder niets. IO3 heeft op het shield een 4,7 kΩ pull-up (T-BUS): daar zeker niet meer dan 1 kΩ.
 - IO1 heeft op het shield een 10 kΩ pull-up naar 3V3: bij "0 V = aan" blijft dat licht uit tijdens het opstarten.
 - Vrij: IO4 (Option 6, eventueel statuspixel), IO6, IO7. **Niet** gebruikt voor iets anders zonder dit document aan te passen.
+
+### 1.1.2 Aansluiten op de Optionix-plaatjes (11/11)
+
+Elke connector krijgt een **Optionix-plaatje** met 8 soldeercontacten. Zelfde verdeling op elke ACCESS (volgt de zoneslots):
+
+| Pin | **RoomSense** | **Option** |
+|---|---|---|
+| 1 | IO3 · **PIR slot 1** | +5 V |
+| 2 | IO5 · **PIR slot 2** | IO10 · **PWM slot 3** |
+| 3 | IO6 · vrij | IO2 · **PIR slot 3** |
+| 4 | IO12 · **PIR slot 4** | IO18 · **PWM slot 2** |
+| 5 | IO7 · vrij | IO19 · **PWM slot 1** |
+| 6 | IO1 · **PWM slot 4** | IO4 · vrij (statuspixel) |
+| 7 | GND | GND |
+| 8 | voeding sensoren (shield-jumper: 5 V voor HC-SR501, 3V3 voor AM312) | 3V3 |
+
+**Testbord:** de LED-driver op **slot 1**: stuuringang op **Option 5 (IO19)**, massa op **Option 7 (GND)**; een PIR op **RoomSense 1 (IO3)**, voeding RoomSense 8, massa RoomSense 7, 1 kΩ in serie op de signaalader.
+- **Gemeenschappelijke massa:** de min van de 24 V-voeding moet aan de GND van de ESP32, tenzij de stuuringang van de driver galvanisch gescheiden is (nakijken op de driver).
 
 ### 1.2 Stuuringang van de LED-drivers: 3,3 V
 
@@ -97,12 +115,14 @@ Per zone: **`m` + zonecode** en **`l` + zonecode**, in kleine letters.
 | `au` | modus van de controller: 1 = AUTO, 0 = MANUEEL |
 | `lux` | lux (−1 = geen bron) |
 | `nt` | nacht (1/0) |
-| `lb` | bron dag/nacht: 0 = eigen sensor, 1 = andere ACCESS, 2 = berekend |
+| `lb` | bron dag/nacht: 0 = eigen sensor, 1 = andere ACCESS, 2 = berekend, −1 = nog geen bron (v0.1–v0.2) |
 | `ac`, `ad`, `ae`, `af` | RSSI, heap %, grootste blok, laagste heap (zoals ROOM) |
 
 Voorbeeld ACCESS1: `{"a":3600,"ms":0,"ls":0,"mw4":0,"lw4":0,"md":1,"ld":80,"au":1,"lux":2,"nt":1,"lb":0,…}`
 
 Bediening: `/set_zone?z=<zone>&v=1` (manueel aan, controller naar MANUEEL), `v=0` (uit, terug naar AUTO), optioneel `&b=0..100` (helderheid). Bv. `/set_zone?z=D&v=1&b=60`.
+
+Alleen om te testen, **geen contract**: `/set_test?z=1..4&b=0..100` zet een zoneslot tijdelijk op een helderheid (niet bewaard; sinds v0.1).
 
 **Overgang van R8:** de Photon gebruikt `mw1`/`lw1` voor de voordeur en `mw2`/`lw2` voor de veldkant. Die keys worden **niet** behouden (`lw1` betekent straks lampgroep W1 op ACCESS2). Het Dashboard en `server.js` gaan om op het moment dat ACCESS1 de Photon vervangt (v0.4).
 
@@ -125,7 +145,7 @@ Telkens één versie, na GO, met versiekop, changelog en een 48 u-test.
 ## 6. Beslissingen (FiDel)
 
 1. **Zones en controllers** (8/11, vervangt de N1-beslissing van 7/11): zie §1.1.1. ACCESS1 = S, W4, D · ACCESS2 = W1, N1 · ACCESS3 = N2, E.
-2. **Testbord** voor v0.1–v0.3: een losse ESP32-C6 op een shield, met **één LED-driver en een LED** op een houten bordje. FiDel maakt het in de week van 9/11.
+2. **Testbord** voor v0.1–v0.3: een losse ESP32-C6 op een shield, met **één LED-driver en twee lampen 9,5 V / 300 mA in serie op 24 V**, aangesloten op slot 1 (§1.1.2). In de maak (11/11).
 3. **PWM-frequentie** van de drivers: **start op 1 kHz**, daarna testen op geflikker en lawaai; bijstellen indien nodig.
 
 4. **`/json`-keys** (8/11): zonecode als naam, licht in %, één modus per controller (§3.1).
@@ -146,6 +166,7 @@ Telkens één versie, na GO, met versiekop, changelog en een 48 u-test.
 
 | Versie | Datum | Wat |
 |---|---|---|
+| v0.4 | 11 nov 2026 | Aansluitingen op de Optionix-plaatjes en testbord (§1.1.2), `lb` −1 en testadres `/set_test`; sketch v0.1 |
 | v0.3 | 8 nov 2026 | Zones per controller en zonecodes (S, W4, D · W1, N1 · N2, E), `/json`-keys vastgelegd, één modus per controller met override-tijd, afwijkingen R8 |
 | v0.2 | 7 nov 2026 | Open vragen beantwoord: N1 blijft bij ACCESS1, testbord met één driver + LED, PWM start op 1 kHz |
 | v0.1 | 7 nov 2026 | Eerste voorstel: zoneslots, LED-drivers 300 mA op 3,3 V, TSL2561 op één controller met delen en berekende terugval, AUTO alleen 's nachts, MANUEEL-override, stappenplan |

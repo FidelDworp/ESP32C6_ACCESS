@@ -1,6 +1,6 @@
 # Overdracht — ACCESS (buitenverlichting, ESP32C6_ACCESS)
 
-*Stand 7 november 2026, 18:30 — Filip Delannoy (FiDel), Zarlardinge (BE)*
+*Stand 11 november 2026, 20:15 — Filip Delannoy (FiDel), Zarlardinge (BE)*
 
 Dit document start een nieuw gesprek met Claude over de buitenverlichting: de Photon R8-ACCESS van vandaag en de ESP32-controllers ACCESS1–3 die nog ontworpen moeten worden. Alle details: [`README.md`](../README.md).
 
@@ -39,5 +39,6 @@ Afwijkingen van de Photon-sketch: zie §6.1 van de standaard.
 1. Terraslicht (S) gaat niet aan, ook niet via Apple Home: andere oorzaak, te onderzoeken.
 2. Koppeling W1 → W2 nagaan (`lw2` bleef 0 bij beweging aan de voordeur).
 3. PIR W2 volgens de code defect.
-4. Testbord klaar → plan + GO voor v0.1.
+4. **Sketch v0.1 (basis) klaar** (11/11): `bin/ESP32_C6_ACCESS_v0.1.ino.bin`. Op het testbord: driver op slot 1 (Option 5 = IO19), PIR op RoomSense 1 (IO3), zie standaard §1.1.2. Testen: lamp volledig uit bij 0 % en volledig aan bij 100 % (3,3 V zonder buffer?), geflikker/gezoem bij 1 kHz, PIR zichtbaar op `/`, `/json` met `md`/`ld`… Daarna 48 u-test en plan + GO voor v0.2 (zones, AUTO/MANUEEL).
+   - Eerste keer flashen: een lege ESP32 via USB (USB CDC On Boot: Disabled). Draait er al een Zarlar-sketch met `/update` en dezelfde `partitions.csv`, dan kan het ook via OTA.
 5. PIReX-combinatie MOV-W1 + MOV-W3 + MOV-DN nakijken (W1 gaat naar ACCESS2).
