@@ -34,7 +34,7 @@ Zie [`ACCESS_STANDAARD.md`](ACCESS_STANDAARD.md) (v0.3, vastgelegd 8/11). **Besl
 
 Afwijkingen van de Photon-sketch: zie §6.1 van de standaard.
 
-**Mogelijke uitbreidingen (idee, 11/11):** deurcontacten (reed-relais per deur) en toegangscontrole (elektrische sloten). Aandachtspunten in §4.1 van de standaard: deurcontacten passen als generieke ingangen; sloten vragen beveiliging (de adressen zijn vandaag open), fail-safe-keuze en liefst een eigen controller.
+**Deurcontacten (gepland v0.5, 11/11):** reed-relais op IO6/IO7: ACCESS1 schuifdeur (`SD`) en voordeur (`VD`), ACCESS3 achterdeur (`AD`) en bovendeur (`BD`); keys `c<code>` (voorstel, standaard §4.1). **Sloten** blijven op hun eigen controllers met een geheim (beslist).
 
 ## 3. Open punten (vóór het ontwerp van ACCESS1)
 

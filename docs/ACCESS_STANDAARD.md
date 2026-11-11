@@ -148,23 +148,29 @@ Alleen om te testen, **geen contract**: `/set_test?z=1..4&b=0..100` zet een zone
 
 ## 4. Niet in de standaard
 
-### 4.1 Mogelijke uitbreidingen (idee van FiDel, 11/11; nog niet in de standaard)
+### 4.1 Deurcontacten (gepland, 11/11) en sloten
 
-- **Deurcontacten** (een reed-relais per deur).
-- **Toegangscontrole** (elektrische sloten).
+**Sloten:** de drie elektrische sloten staan al op **aparte controllers met een geheim**. Dat blijft zo: **geen sloten in ACCESS** (beslist 11/11).
 
-Aandachtspunten vóór die in de standaard komen (regel 3: eerst dit document, dan hardware en code):
+**Deurcontacten:** een **reed-relais per deur**, 4 deuren:
 
-1. **Deurcontacten passen goed.** Een reed-contact is gewoon een ingang naar GND met pull-up, zinvol op meer dan één controller, en er zijn vrije pinnen: IO6, IO7 en IO4 overal, plus de slots 3 en 4 op ACCESS2 en ACCESS3. Voorstel: als "generieke ingangen" zoals GP1–GP4 in de ROOM-standaard, met eigen `/json`-keys. Lange kabels buiten: liefst een RC-filter of optocoupler tegen storing.
-2. **Elektrische sloten vragen een eigen ontwerp.**
-   - **Beveiliging:** de bedieningsadressen (`/set_zone`, `/set_test`, `/update`) zijn vandaag open voor iedereen op het wifi-netwerk. Voor verlichting is dat aanvaardbaar, voor een deur niet. Een slot heeft minstens een geheim (token) of authenticatie nodig, en `/update` dan ook.
-   - **Fail-safe of fail-secure:** wat gebeurt er bij een stroomuitval, een crash of een herstart? Een mechanische sleutel moet altijd werken.
-   - **Vermogen:** een slot van 12/24 V met spoel heeft een MOSFET of relais met vrijloopdiode nodig, en eventueel een aparte voeding.
-   - **Waar:** misschien beter een aparte controller (het vroegere AlarmiX-idee) dan in de ACCESS-sketch, zodat een fout in de verlichting de deuren niet raakt.
+| Controller | Deur | Code (voorstel) | Pin (voorstel) |
+|---|---|---|---|
+| ACCESS1 (slaapkamer, boven de voordeur in de hal) | Schuifdeur | `SD` | RoomSense 3 · IO6 |
+| ACCESS1 | Voordeur | `VD` | RoomSense 5 · IO7 |
+| ACCESS3 (B&B, oostkant) | Achterdeur | `AD` | RoomSense 3 · IO6 |
+| ACCESS3 | Bovendeur | `BD` | RoomSense 5 · IO7 |
+
+Voorstel, nog te bevestigen:
+- **Aansluiting:** reed-contact tussen de pin en **GND**. IO6 heeft op het shield al een pull-up (de DHT-lijn, gemeten 3,3 V). Op IO7 een **pull-up van 10 kΩ naar 3V3** op het Optionix-plaatje (de interne pull-up van ±45 kΩ is te zwak voor lange kabels buiten). Eventueel 100 nF naar GND als filter.
+- **Zo staan de pinnen overal gelijk:** IO6 en IO7 zijn op elke ACCESS vrij. ACCESS2 gebruikt ze (nog) niet.
+- **Software:** per ingang in `/settings` een deurcode (leeg = niet gebruikt) en "contact gesloten = deur dicht" of omgekeerd. Ontdenderen (±50 ms). Telling en tijdstip van de laatste opening, zichtbaar op `/` en in Diagnose.
+- **`/json`:** per deur `c<code>` in kleine letters, 1 = **open**, 0 = dicht: `csd`, `cvd` (ACCESS1) · `cad`, `cbd` (ACCESS3). Achteraan toegevoegd, zoals afgesproken voor nieuwe keys.
+- **Wanneer:** als v0.5, na het plaatsen van ACCESS1 (v0.4), of eerder als FiDel dat wil.
 
 ### 4.2 Wat er niet in komt
 
-- Geen andere sensoren (temperatuur, CO2…), geen pixels, geen relais. Deurcontacten en sloten: zie §4.1.
+- Geen andere sensoren (temperatuur, CO2…), geen pixels, geen relais, **geen sloten**. Deurcontacten: zie §4.1.
 - Spelregels zoals bij de rooms: iets nieuws alleen als het in de standaard past; eerst dit document aanpassen, dan hardware en code; experimenten in `ESP32C6_Experiments`.
 
 ## 5. Stappenplan
@@ -177,6 +183,7 @@ Telkens één versie, na GO, met versiekop, changelog en een 48 u-test.
 | v0.2 | **Zones:** PIR, brandtijd, helderheid (PWM), AUTO/MANUEEL met override-tijd, `/set_zone`. Nog zonder dag/nacht |
 | v0.3 | **Dag/nacht:** TSL2561, lux delen tussen de controllers, berekende terugval |
 | v0.4 | **Plaatsen als ACCESS1.** R8-ACCESS uit; `server.js` en Dashboard (rij 3) naar ACCESS1. Daarna ACCESS2 en ACCESS3 in de B&B |
+| v0.5 | **Deurcontacten** (voorstel §4.1): ACCESS1 schuifdeur + voordeur, ACCESS3 achterdeur + bovendeur |
 
 ## 6. Beslissingen (FiDel)
 
@@ -202,7 +209,7 @@ Telkens één versie, na GO, met versiekop, changelog en een 48 u-test.
 
 | Versie | Datum | Wat |
 |---|---|---|
-| v0.4 | 11 nov 2026 | Functiebeschrijving, standaardlampen 9,5 V / 300 mA, mogelijke uitbreidingen (deurcontacten, sloten) met aandachtspunten (§4.1). Aansluitingen op de Optionix-plaatjes per controller (zonecodes per slot voor ACCESS1–3), RoomSense 8 vast 3,3 V, testbord (§1.1.2), `lb` −1 en testadres `/set_test`; sketch v0.1 |
+| v0.4 | 11 nov 2026 | Functiebeschrijving, standaardlampen 9,5 V / 300 mA. Sloten blijven op aparte controllers; 4 deurcontacten gepland (ACCESS1: schuifdeur, voordeur; ACCESS3: achterdeur, bovendeur), voorstel pinnen en keys (§4.1). Aansluitingen op de Optionix-plaatjes per controller (zonecodes per slot voor ACCESS1–3), RoomSense 8 vast 3,3 V, testbord (§1.1.2), `lb` −1 en testadres `/set_test`; sketch v0.1 |
 | v0.3 | 8 nov 2026 | Zones per controller en zonecodes (S, W4, D · W1, N1 · N2, E), `/json`-keys vastgelegd, één modus per controller met override-tijd, afwijkingen R8 |
 | v0.2 | 7 nov 2026 | Open vragen beantwoord: N1 blijft bij ACCESS1, testbord met één driver + LED, PWM start op 1 kHz |
 | v0.1 | 7 nov 2026 | Eerste voorstel: zoneslots, LED-drivers 300 mA op 3,3 V, TSL2561 op één controller met delen en berekende terugval, AUTO alleen 's nachts, MANUEEL-override, stappenplan |

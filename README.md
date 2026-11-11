@@ -6,9 +6,7 @@
 
 **Functie:** de ACCESS-controllers gebruiken dezelfde processor en hetzelfde shield als de room-controllers, maar bedienen de **buitenverlichting rondom het huis**: PIR-sensoren detecteren beweging, en modules met een PWM-ingang dimmen de lichten. De standaardlampen zijn **2 LED's van 9,5 V / 300 mA in serie**, gevoed met 24 V door de modules.
 
-Mogelijk komen er later bij (idee, nog niet in de standaard; zie de aandachtspunten in `docs/ACCESS_STANDAARD.md` §4):
-- **Deurcontacten** (een reed-relais per deur)
-- **Toegangscontrole** (elektrische sloten)
+Gepland (v0.5, `docs/ACCESS_STANDAARD.md` §4.1): **deurcontacten** met een reed-relais: ACCESS1 schuifdeur en voordeur, ACCESS3 achterdeur en bovendeur. De **elektrische sloten** blijven op hun eigen controllers met een geheim.
 
 Overzicht van het hele systeem: [`Zarlardinge-Home-Automation`](https://github.com/FidelDworp/Zarlardinge-Home-Automation) (README en Master-document).
 
