@@ -14,7 +14,7 @@ Alle buitenverlichting van Zarlardinge draait op **dezelfde hardware en dezelfde
 | Zones | **maximaal 4 per controller**, elk een PIR-ingang en een PWM-uitgang (§1.1) |
 | Lampen | per zone **LED-drivers van 300 mA** (constante stroom) met PWM-stuuringang. Per driver twee lampen **12 V / 3 W in serie op 24 V** |
 | Luxsensor | **TSL2561** op de I2C-bus (IO13 SDA / IO11 SCL, 3,3 V, adres 0x39), op **één** controller: waar hij het daglicht het best ziet (normaal ACCESS1). Per controller aan/uit in `/settings` |
-| Voeding PIR's | HC-SR501 op 5 V (uitgang 3,3 V): shield-jumper Sense pin 8 op **5 V** |
+| Voeding PIR's | Op het ESP32-shield is **RoomSense 8 vast 3,3 V** (geen jumper meer, zoals op het PhotoniX-shield). AM312 werkt op 3,3 V. Een HC-SR501 heeft 5 V nodig: voeden uit **Option 1 (+5 V)**; zijn uitgang is 3,3 V |
 
 **Gouden regel: een ESP32-pin ziet nooit meer dan 3,3 V.** Elke signaalader meten vóór aansluiten.
 
@@ -62,7 +62,25 @@ Elke connector krijgt een **Optionix-plaatje** met 8 soldeercontacten. Zelfde ve
 | 5 | IO7 · vrij | IO19 · **PWM slot 1** |
 | 6 | IO1 · **PWM slot 4** | IO4 · vrij (statuspixel) |
 | 7 | GND | GND |
-| 8 | voeding sensoren (shield-jumper: 5 V voor HC-SR501, 3V3 voor AM312) | 3V3 |
+| 8 | sensorvoeding: **3,3 V** (vast op het ESP32-shield) | 3V3 |
+
+**Per controller** (labels voor de plaatjes; "gemeten" = zonder iets aangesloten, met sketch v0.1, 11/11):
+
+| Pin | **ACCESS1** RoomSense | **ACCESS1** Option | **ACCESS2** RoomSense | **ACCESS2** Option | **ACCESS3** RoomSense | **ACCESS3** Option | Gemeten RS / Opt |
+|---|---|---|---|---|---|---|---|
+| 1 | IO3 · PIR **D** | +5 V | IO3 · PIR **W1** | +5 V | IO3 · PIR **N2** | +5 V | 3,3 / 5 V ⚠️ |
+| 2 | IO5 · PIR **W4** | IO10 · PWM **S** | IO5 · PIR **N1** | IO10 · vrij | IO5 · PIR **E** | IO10 · vrij | 0 / 3,3 |
+| 3 | IO6 · vrij | IO2 · PIR **S** | IO6 · vrij | IO2 · vrij | IO6 · vrij | IO2 · vrij | 3,3 / 0 |
+| 4 | IO12 · vrij | IO18 · PWM **W4** | IO12 · vrij | IO18 · PWM **N1** | IO12 · vrij | IO18 · PWM **E** | 0 / 3,3 |
+| 5 | IO7 · vrij | IO19 · PWM **D** | IO7 · vrij | IO19 · PWM **W1** | IO7 · vrij | IO19 · PWM **N2** | 0 / 3,3 |
+| 6 | IO1 · vrij | IO4 · vrij | IO1 · vrij | IO4 · vrij | IO1 · vrij | IO4 · vrij | 3,3 / 0 |
+| 7 | GND | GND | GND | GND | GND | GND | — |
+| 8 | sensorvoeding 3,3 V | 3V3 | sensorvoeding 3,3 V | 3V3 | sensorvoeding 3,3 V | 3V3 | 3,3 / 3,3 |
+
+Zonecodes in `/settings`: ACCESS1 slot 1 `D`, 2 `W4`, 3 `S` · ACCESS2 slot 1 `W1`, 2 `N1` · ACCESS3 slot 1 `N2`, 2 `E` (beslist 11/11). De oude R8-klemmen MOV-E, PWM-E, MOV-N1 en PWM-N1 worden op ACCESS1 **niet** aangesloten.
+
+- Gemeten 3,3 V op IO3 = pull-up 4,7 kΩ (T-BUS) op het shield; op IO6 = pull-up van de DHT-lijn; op IO1 = PWM uit + pull-up 10 kΩ; op de andere PWM-pinnen = uitgang uit (actief laag).
+- ⚠️ **Option 1 mat 0 V** op het testbord (11/11): daar hoort +5 V. Nakijken in het ontwerp van het shield vóór er PIR's of 5 V-sensoren aan komen.
 
 **Testbord:** de LED-driver op **slot 1**: stuuringang op **Option 5 (IO19)**, massa op **Option 7 (GND)**; een PIR op **RoomSense 1 (IO3)**, voeding RoomSense 8, massa RoomSense 7, 1 kΩ in serie op de signaalader.
 - **Gemeenschappelijke massa:** de min van de 24 V-voeding moet aan de GND van de ESP32, tenzij de stuuringang van de driver galvanisch gescheiden is (nakijken op de driver).
@@ -166,7 +184,7 @@ Telkens één versie, na GO, met versiekop, changelog en een 48 u-test.
 
 | Versie | Datum | Wat |
 |---|---|---|
-| v0.4 | 11 nov 2026 | Aansluitingen op de Optionix-plaatjes en testbord (§1.1.2), `lb` −1 en testadres `/set_test`; sketch v0.1 |
+| v0.4 | 11 nov 2026 | Aansluitingen op de Optionix-plaatjes per controller (zonecodes per slot voor ACCESS1–3), RoomSense 8 vast 3,3 V, testbord (§1.1.2), `lb` −1 en testadres `/set_test`; sketch v0.1 |
 | v0.3 | 8 nov 2026 | Zones per controller en zonecodes (S, W4, D · W1, N1 · N2, E), `/json`-keys vastgelegd, één modus per controller met override-tijd, afwijkingen R8 |
 | v0.2 | 7 nov 2026 | Open vragen beantwoord: N1 blijft bij ACCESS1, testbord met één driver + LED, PWM start op 1 kHz |
 | v0.1 | 7 nov 2026 | Eerste voorstel: zoneslots, LED-drivers 300 mA op 3,3 V, TSL2561 op één controller met delen en berekende terugval, AUTO alleen 's nachts, MANUEEL-override, stappenplan |
