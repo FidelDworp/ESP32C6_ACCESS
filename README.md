@@ -4,6 +4,12 @@
 
 > **Status:** sketch **v0.1** (basis, 11/11/2026) voor het testbord: `bin/ESP32_C6_ACCESS_v0.1.ino.bin`, gecompileerd door Claude (ESP32-core 3.3.12, nieuwste bibliotheken). De ESP32-controllers ACCESS1–3 zijn nog niet geplaatst. Vandaag bedient de **Photon R8-ACCESS** de buitenlichten zuid en west. Zijn laatste sketch staat in [`old/R8-ACCESS.ino`](old/R8-ACCESS.ino).
 
+**Functie:** de ACCESS-controllers gebruiken dezelfde processor en hetzelfde shield als de room-controllers, maar bedienen de **buitenverlichting rondom het huis**: PIR-sensoren detecteren beweging, en modules met een PWM-ingang dimmen de lichten. De standaardlampen zijn **2 LED's van 9,5 V / 300 mA in serie**, gevoed met 24 V door de modules.
+
+Mogelijk komen er later bij (idee, nog niet in de standaard; zie de aandachtspunten in `docs/ACCESS_STANDAARD.md` §4):
+- **Deurcontacten** (een reed-relais per deur)
+- **Toegangscontrole** (elektrische sloten)
+
 Overzicht van het hele systeem: [`Zarlardinge-Home-Automation`](https://github.com/FidelDworp/Zarlardinge-Home-Automation) (README en Master-document).
 
 ---
@@ -79,7 +85,7 @@ Zolang de bron niet online is (pixel 1 en 5 geel of rood), blijven pixels 2–4 
 
 Hardware, gedrag en stappenplan staan in [`docs/ACCESS_STANDAARD.md`](docs/ACCESS_STANDAARD.md) (v0.3, vastgelegd 8/11/2026). Kort:
 
-- **4 zoneslots** op vaste pinnen, identiek op elke controller: PIR-ingang + PWM-uitgang naar een **LED-driver van 300 mA** (2 × 12 V / 3 W in serie op 24 V). Sturing op **3,3 V**, zoals de Photon; buffer naar 5 V alleen als een test dat nodig maakt.
+- **4 zoneslots** op vaste pinnen, identiek op elke controller: PIR-ingang + PWM-uitgang naar een **LED-driver van 300 mA** (2 LED-lampen 9,5 V / 300 mA in serie op 24 V). Sturing op **3,3 V**, zoals de Photon; buffer naar 5 V alleen als een test dat nodig maakt.
 - **Zones:** ACCESS1 = `S`, `W4`, `D` (voordeur) · ACCESS2 = `W1`, `N1` · ACCESS3 = `N2`, `E`. `/json`: `m<zone>`, `l<zone>` (0–100 %), `au`.
 - **AUTO = nacht én beweging**, **MANUEEL** als override (één modus per controller, max. 30 min, instelbaar).
 - **Lux:** één **TSL2561** op de controller met het beste zicht op het daglicht (normaal ACCESS1). De andere lezen de lux via `/json`; valt die weg, dan berekenen ze zelf zonsopgang en -ondergang.

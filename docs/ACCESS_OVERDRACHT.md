@@ -24,7 +24,7 @@ Dit document start een nieuw gesprek met Claude over de buitenverlichting: de Ph
 ## 2. Ontwerp: de ACCESS-standaard
 
 Zie [`ACCESS_STANDAARD.md`](ACCESS_STANDAARD.md) (v0.3, vastgelegd 8/11). **Beslist door FiDel (7–8/11):**
-- Uitgangen: **PWM naar LED-drivers van 300 mA** (2 lampen 12 V / 3 W in serie op 24 V); de drivers werken op de Photon met 3,3 V → eerst zonder buffer, buffer naar 5 V alleen als nodig.
+- Uitgangen: **PWM naar LED-drivers van 300 mA** (standaard 2 LED-lampen 9,5 V / 300 mA in serie op 24 V); de drivers werken op de Photon met 3,3 V → eerst zonder buffer, buffer naar 5 V alleen als nodig.
 - **Luxsensor (TSL2561)** normaal op ACCESS1, mogelijk op ACCESS2 of 3: waar hij het daglicht het best permanent ziet.
 - **AUTO alleen 's nachts**, tenzij manueel aangezet (**override zoals in de ROOM-sketch**).
 
@@ -33,6 +33,8 @@ Zie [`ACCESS_STANDAARD.md`](ACCESS_STANDAARD.md) (v0.3, vastgelegd 8/11). **Besl
 - Testbord = losse ESP32-C6 op shield met één driver + LED op een houten bordje (FiDel maakt het week van 9/11); **PWM start op 1 kHz**.
 
 Afwijkingen van de Photon-sketch: zie §6.1 van de standaard.
+
+**Mogelijke uitbreidingen (idee, 11/11):** deurcontacten (reed-relais per deur) en toegangscontrole (elektrische sloten). Aandachtspunten in §4.1 van de standaard: deurcontacten passen als generieke ingangen; sloten vragen beveiliging (de adressen zijn vandaag open), fail-safe-keuze en liefst een eigen controller.
 
 ## 3. Open punten (vóór het ontwerp van ACCESS1)
 

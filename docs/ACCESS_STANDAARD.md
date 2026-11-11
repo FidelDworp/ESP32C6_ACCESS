@@ -2,6 +2,8 @@
 
 *v0.4 — 11 nov 2026 — Filip Delannoy (FiDel). Status: **vastgelegd** (zones, `/json`-keys, gedrag). Wijzigen alleen met akkoord van FiDel. Sketch: **v0.1** (basis), voor het testbord.*
 
+**Functie:** de ACCESS-controllers gebruiken dezelfde processor en hetzelfde shield als de room-controllers, maar bedienen de **buitenverlichting rondom het huis**: PIR-sensoren detecteren beweging, en modules met een PWM-ingang dimmen de lichten. De standaardlampen zijn **2 LED's van 9,5 V / 300 mA in serie**, gevoed met 24 V door de modules.
+
 Alle buitenverlichting van Zarlardinge draait op **dezelfde hardware en dezelfde sketch** `ESP32_C6_ACCESS`, op minstens drie controllers: ACCESS1 (.82), ACCESS2 (.83) en ACCESS3 (.84). Wat per controller verschilt (zones, namen, luxsensor), is een **instelling** in `/settings` (NVS), nooit een aparte sketch. Zelfde aanpak als de [ROOM-standaard](https://github.com/FidelDworp/ESP32C6_ROOMS/blob/main/docs/ROOM_STANDAARD.md).
 
 ---
@@ -12,7 +14,7 @@ Alle buitenverlichting van Zarlardinge draait op **dezelfde hardware en dezelfde
 |---|---|
 | Controller | ESP32-C6-DevKitM-1 (16 MB flash) op het **Zarlar shield** |
 | Zones | **maximaal 4 per controller**, elk een PIR-ingang en een PWM-uitgang (§1.1) |
-| Lampen | per zone **LED-drivers van 300 mA** (constante stroom) met PWM-stuuringang. Per driver twee lampen **12 V / 3 W in serie op 24 V** |
+| Lampen | per zone een **LED-driver (module) van 300 mA** (constante stroom) met PWM-stuuringang, gevoed met 24 V. Standaard: **2 LED-lampen 9,5 V / 300 mA in serie** (±2,9 W per lamp) |
 | Luxsensor | **TSL2561** op de I2C-bus (IO13 SDA / IO11 SCL, 3,3 V, adres 0x39), op **één** controller: waar hij het daglicht het best ziet (normaal ACCESS1). Per controller aan/uit in `/settings` |
 | Voeding PIR's | Op het ESP32-shield is **RoomSense 8 vast 3,3 V** (geen jumper meer, zoals op het PhotoniX-shield). AM312 werkt op 3,3 V. Een HC-SR501 heeft 5 V nodig: voeden uit **Option 1 (+5 V)**; zijn uitgang is 3,3 V |
 
@@ -146,7 +148,23 @@ Alleen om te testen, **geen contract**: `/set_test?z=1..4&b=0..100` zet een zone
 
 ## 4. Niet in de standaard
 
-- Geen andere sensoren (temperatuur, CO2…), geen pixels, geen relais. AlarmiX (deuren, sloten, bel) blijft in de planning, buiten deze standaard.
+### 4.1 Mogelijke uitbreidingen (idee van FiDel, 11/11; nog niet in de standaard)
+
+- **Deurcontacten** (een reed-relais per deur).
+- **Toegangscontrole** (elektrische sloten).
+
+Aandachtspunten vóór die in de standaard komen (regel 3: eerst dit document, dan hardware en code):
+
+1. **Deurcontacten passen goed.** Een reed-contact is gewoon een ingang naar GND met pull-up, zinvol op meer dan één controller, en er zijn vrije pinnen: IO6, IO7 en IO4 overal, plus de slots 3 en 4 op ACCESS2 en ACCESS3. Voorstel: als "generieke ingangen" zoals GP1–GP4 in de ROOM-standaard, met eigen `/json`-keys. Lange kabels buiten: liefst een RC-filter of optocoupler tegen storing.
+2. **Elektrische sloten vragen een eigen ontwerp.**
+   - **Beveiliging:** de bedieningsadressen (`/set_zone`, `/set_test`, `/update`) zijn vandaag open voor iedereen op het wifi-netwerk. Voor verlichting is dat aanvaardbaar, voor een deur niet. Een slot heeft minstens een geheim (token) of authenticatie nodig, en `/update` dan ook.
+   - **Fail-safe of fail-secure:** wat gebeurt er bij een stroomuitval, een crash of een herstart? Een mechanische sleutel moet altijd werken.
+   - **Vermogen:** een slot van 12/24 V met spoel heeft een MOSFET of relais met vrijloopdiode nodig, en eventueel een aparte voeding.
+   - **Waar:** misschien beter een aparte controller (het vroegere AlarmiX-idee) dan in de ACCESS-sketch, zodat een fout in de verlichting de deuren niet raakt.
+
+### 4.2 Wat er niet in komt
+
+- Geen andere sensoren (temperatuur, CO2…), geen pixels, geen relais. Deurcontacten en sloten: zie §4.1.
 - Spelregels zoals bij de rooms: iets nieuws alleen als het in de standaard past; eerst dit document aanpassen, dan hardware en code; experimenten in `ESP32C6_Experiments`.
 
 ## 5. Stappenplan
@@ -184,7 +202,7 @@ Telkens één versie, na GO, met versiekop, changelog en een 48 u-test.
 
 | Versie | Datum | Wat |
 |---|---|---|
-| v0.4 | 11 nov 2026 | Aansluitingen op de Optionix-plaatjes per controller (zonecodes per slot voor ACCESS1–3), RoomSense 8 vast 3,3 V, testbord (§1.1.2), `lb` −1 en testadres `/set_test`; sketch v0.1 |
+| v0.4 | 11 nov 2026 | Functiebeschrijving, standaardlampen 9,5 V / 300 mA, mogelijke uitbreidingen (deurcontacten, sloten) met aandachtspunten (§4.1). Aansluitingen op de Optionix-plaatjes per controller (zonecodes per slot voor ACCESS1–3), RoomSense 8 vast 3,3 V, testbord (§1.1.2), `lb` −1 en testadres `/set_test`; sketch v0.1 |
 | v0.3 | 8 nov 2026 | Zones per controller en zonecodes (S, W4, D · W1, N1 · N2, E), `/json`-keys vastgelegd, één modus per controller met override-tijd, afwijkingen R8 |
 | v0.2 | 7 nov 2026 | Open vragen beantwoord: N1 blijft bij ACCESS1, testbord met één driver + LED, PWM start op 1 kHz |
 | v0.1 | 7 nov 2026 | Eerste voorstel: zoneslots, LED-drivers 300 mA op 3,3 V, TSL2561 op één controller met delen en berekende terugval, AUTO alleen 's nachts, MANUEEL-override, stappenplan |
