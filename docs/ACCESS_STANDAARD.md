@@ -48,7 +48,7 @@ De lampgroepen zijn die van de plattegrond op FiDels tekening *ACCESS-WASPL bedr
 ACCESS2 en ACCESS3 staan in de B&B; W1 en N1 zitten in de hoek waar ACCESS2 komt. Windrichtingen in het Engels, zoals op de tekening: **W, S, N, E**.
 
 - PIR-ingangen: **1 kΩ in serie**, verder niets. IO3 heeft op het shield een 4,7 kΩ pull-up (T-BUS): daar zeker niet meer dan 1 kΩ.
-- ⚠️ **Test 12/11:** een **AM312 op IO3 werkt niet**: zijn uitgang kan de 4,7 kΩ pull-up niet laag trekken (gemeten rust 2,71 V, beweging 3,24 V) → altijd "beweging". Voorstel: PIR's alleen op pinnen **zonder** pull-up, en IO3/IO6 (met pull-up) gebruiken voor de reed-contacten. Zie open vraag 5.
+- ⚠️ **Test 12/11:** een **AM312 op IO3 werkt niet**: zijn uitgang kan de 4,7 kΩ pull-up niet laag trekken (gemeten rust 2,71 V, beweging 3,24 V) → altijd "beweging". Voorstel: PIR's alleen op pinnen **zonder** pull-up, en IO3/IO6 (met pull-up) gebruiken voor de reed-contacten. Zie §6.2.
 - IO1 heeft op het shield een 10 kΩ pull-up naar 3V3: bij "0 V = aan" blijft dat licht uit tijdens het opstarten.
 - Vrij: IO4 (Option 6, eventueel statuspixel), IO6, IO7. **Niet** gebruikt voor iets anders zonder dit document aan te passen.
 
@@ -206,7 +206,9 @@ Telkens één versie, na GO, met versiekop, changelog en een 48 u-test.
 
 **Nog na te kijken op de tekening:** de nieuwe PIR's MOV-W1, MOV-W3 en MOV-DN gaan via het PIReX-printje samen naar één ingang. Met de nieuwe zones horen W3 en DN bij `D` (ACCESS1) en W1 bij ACCESS2.
 
-5. **Pinverdeling na de PIR-test (12/11), voorstel:** PIR slot 1 → **IO5** (RS 2), slot 2 → **IO12** (RS 4), slot 3 → IO2 (Opt 3, ongewijzigd), slot 4 → **IO7** (RS 5). Reed-contacten op **IO3** (RS 1) en **IO6** (RS 3): die hebben al een pull-up op het shield, dus geen extra weerstand nodig. PWM-pinnen ongewijzigd. Te bevestigen door FiDel.
+## 6.2 Te bevestigen
+
+- **Pinverdeling na de PIR-test (12/11), voorstel:** PIR slot 1 → **IO5** (RS 2), slot 2 → **IO12** (RS 4), slot 3 → IO2 (Opt 3, ongewijzigd), slot 4 → **IO7** (RS 5). Reed-contacten op **IO3** (RS 1) en **IO6** (RS 3): die hebben al een pull-up op het shield, dus geen extra weerstand nodig. PWM-pinnen ongewijzigd. Te bevestigen door FiDel.
 
 ## 7. Historiek
 
