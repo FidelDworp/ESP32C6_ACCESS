@@ -11,6 +11,8 @@
 // Updaten: OTA via http://<ip>/update met bin/ESP32_C6_ACCESS_vX.Y.ino.bin
 //
 // ── VERSIEHISTORIE ──────────────────────────────────────────
+// v0.3.1 (12nov26): nota met de vaste IP-adressen en zonecodes van ACCESS1–3 bij "Controller
+//   en netwerk" in /settings (één sketch voor drie controllers: naam en IP altijd samen aanpassen).
 // v0.3 (12nov26): LUXSENSOR EN DAG/NACHT (standaard §2.2, eigen sensor).
 //   - TSL2561 op I2C (SDA IO13, SCL IO11, 100 kHz), eigen code volgens de datasheet (geen
 //     bibliotheek): zoekt 0x39/0x29/0x49, 402 ms integratie, automatische versterking (16x in het
@@ -99,7 +101,7 @@
 #error "ACCESS: zet in de Arduino IDE Tools -> USB CDC On Boot op Disabled (seriele monitor via de poort UART)"
 #endif
 
-#define ACCESS_VERSION "v0.3"   // enige plaats met het versienummer
+#define ACCESS_VERSION "v0.3.1"   // enige plaats met het versienummer
 
 // ── ZONESLOTS (ACCESS_STANDAARD §1.1) ───────────────────────
 //            slot:      1    2    3    4
@@ -741,6 +743,11 @@ void handleSettings(AsyncWebServerRequest* req) {
   p->printf("<tr><td>WiFi-netwerk</td><td><input type=\"text\" name=\"ssid\" maxlength=\"32\" value=\"%s\"></td></tr>", wifi_ssid);
   p->print(F("<tr><td>WiFi-paswoord</td><td><input type=\"password\" name=\"pass\" maxlength=\"64\" placeholder=\"(ongewijzigd)\"></td></tr>"));
   p->printf("<tr><td>Vast IP</td><td><input type=\"text\" name=\"ip\" maxlength=\"15\" value=\"%s\"></td></tr>", static_ip);
+  p->print(F("<tr><td colspan=\"2\" class=\"dim\" style=\"background:#fffbe6\">"
+             "<b>Vaste adressen</b> (één sketch voor alle ACCESS-controllers; naam en IP altijd samen aanpassen, nooit twee keer hetzelfde IP):<br>"
+             "ACCESS1 &middot; <b>192.168.0.82</b> &middot; BURO &middot; zones D, W4, S &middot; deuren SD, VD<br>"
+             "ACCESS2 &middot; <b>192.168.0.83</b> &middot; B&amp;B &middot; zones W1, N1<br>"
+             "ACCESS3 &middot; <b>192.168.0.84</b> &middot; B&amp;B &middot; zones N2, E &middot; deuren AD, BD</td></tr>"));
   p->print(F("</table><h3>Uitgangen</h3><table>"));
   p->printf("<tr><td>PWM-frequentie (Hz)</td><td><input type=\"number\" name=\"hz\" min=\"100\" max=\"20000\" value=\"%u\"></td></tr>", pwm_freq);
   for (int z = 0; z < NUM_ZONES; z++)

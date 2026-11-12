@@ -1,6 +1,6 @@
 # Overdracht — ACCESS (buitenverlichting, ESP32C6_ACCESS)
 
-*Stand 12 november 2026, 21:45 — Filip Delannoy (FiDel), Zarlardinge (BE)*
+*Stand 12 november 2026, 22:20 — Filip Delannoy (FiDel), Zarlardinge (BE)*
 
 Dit document start een nieuw gesprek met Claude over de buitenverlichting: de Photon R8-ACCESS van vandaag en de ESP32-controllers ACCESS1–3 die nog ontworpen moeten worden. Alle details: [`README.md`](../README.md).
 
@@ -55,6 +55,7 @@ Afwijkingen van de Photon-sketch: zie §6.1 van de standaard.
    - Omschrijvingen per zone (FiDel 12/11): D voordeur · W4 veldkant · S terras · W1 parking · N1 puntgevel rechts · N2 puntgevel links · E binnenplaats.
    - **Open (12/11):** de LED pulseert bij lage waarden (0–20 %) tijdens trage dimtijden (10 s). Vermoedelijk de driver (opstarttijd per PWM-puls): FiDel test vaste lage waarden met dimtijd 0 en PWM 250/500/2000 Hz.
 7. **Sketch v0.3 (luxsensor) klaar** (12/11): `bin/ESP32_C6_ACCESS_v0.3.ino.bin`. TSL2561 op I2C (IO13/IO11), eigen code, automatische versterking; dag/nacht met drempel 150 ± 30 lux en vertraging 1/5 min; `lux`, `nt`, `lb` in `/json`; blok Luxsensor op `/advanced`; huisje in de navigatie. FiDel monteert de TSL2561 van het room-testbord.
-   - **Volgende:** v0.3.1 = lux van een andere ACCESS via `/json` + berekende zonsopgang/-ondergang (NTP) als terugval.
+   - **v0.3.1** (12/11): nota met de vaste IP-adressen en zonecodes van ACCESS1–3 in `/settings` (`bin/ESP32_C6_ACCESS_v0.3.1.ino.bin`).
+   - **Volgende:** v0.3.2 = lux van een andere ACCESS via `/json` + berekende zonsopgang/-ondergang (NTP) als terugval.
    - TSL2561 van het room-testbord lijkt defect (12/11); FiDel soldeert een andere.
 8. **Portal (RPi, `server.js` v2.13, 12/11):** kaarten **Buiten 1/2/3** op de startpagina en `access.html?id=1|2|3` (grondplan, modus, dag/nacht, tegels met aan/uit en dimmen). Leest alleen de `/json`-keys (`m<zone>`, `l<zone>`, `au`, `lux`, `nt`, `lb`); bediening `POST /api/set/accessN {z, v, b}` → `/set_zone`. Deuren pas na v0.5 (`/json`). Apple Home en Dashboard-matrix blijven bij R8 tot v0.4.
