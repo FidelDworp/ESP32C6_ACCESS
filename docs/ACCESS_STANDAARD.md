@@ -1,6 +1,6 @@
 # ACCESS-standaard (Zarlar buitenverlichting)
 
-*v0.6 — 12 nov 2026 — Filip Delannoy (FiDel). Status: **vastgelegd** (zones, `/json`-keys, gedrag). Wijzigen alleen met akkoord van FiDel. Sketch: **v0.2.3** (zones, AUTO/MANUEEL, beweging per minuut, dimmen), op het testbord.*
+*v0.6 — 12 nov 2026 — Filip Delannoy (FiDel). Status: **vastgelegd** (zones, `/json`-keys, gedrag). Wijzigen alleen met akkoord van FiDel. Sketch: **v0.2.4** (zones, AUTO/MANUEEL, beweging per minuut, dimmen, landingspagina), op het testbord.*
 
 **Functie:** de ACCESS-controllers gebruiken dezelfde processor en hetzelfde shield als de room-controllers, maar bedienen de **buitenverlichting rondom het huis**: PIR-sensoren detecteren beweging, en modules met een PWM-ingang dimmen de lichten. De standaardlampen zijn **2 LED's van 9,5 V / 300 mA in serie**, gevoed met 24 V door de modules.
 
@@ -130,6 +130,7 @@ De bron die in gebruik is, staat in de UI en in `/json`.
 ## 3. Software
 
 - **Eén sketch** `ESP32_C6_ACCESS`, zelfde basis als de andere ESP32-sketches: vast IP, mDNS (`access1.local` …), `/settings`, `/update` (OTA), Diagnose (herstartreden, geheugen, WiFi), geen Matter.
+- **Landingspagina "/"** (`landing.h`, sinds v0.2.4): één pagina voor alle ACCESS-controllers met een vereenvoudigd grondplan (alle 7 zones en 4 deuren op een vaste plaats per code); elke controller kleurt en bedient alleen zijn eigen zones en deuren. Omschrijvingen: D voordeur · W4 veldkant · S terras · W1 parking · N1 puntgevel rechts · N2 puntgevel links · E binnenplaats. Technische pagina: `/advanced`.
 - **Apple Home** via de RPi-bridge (`server.js`), zoals nu voor R8-ACCESS.
 - **Dashboard:** rij 3 (de 4 muren) leest later `/json` van ACCESS1–3 in plaats van de Photon, met de muurletters **W·S·N·E** (nu W·Z·N·O). Eigen Dashboard-versie, eigen GO.
 - **De lux in `/json`**, zodat ook het Dashboard, de ECO en anderen hem kunnen lezen. Daarmee is een aparte OUTSIDE-controller (.72) waarschijnlijk overbodig.

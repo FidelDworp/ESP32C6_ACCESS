@@ -11,6 +11,12 @@
 // Updaten: OTA via http://<ip>/update met bin/ESP32_C6_ACCESS_vX.Y.ino.bin
 //
 // ── VERSIEHISTORIE ──────────────────────────────────────────
+// v0.2.4 (12nov26): LANDINGSPAGINA "/" (landing.h, zoals ROOM): modus (tik in MANUEEL = terug
+//   naar AUTO), dag/nacht, vereenvoudigd grondplan met ALLE zones en deuren op een vaste plaats
+//   per code (één pagina voor ACCESS1–3; alleen de eigen zones/deuren in kleur en bedienbaar),
+//   tegels per zone (tik = aan/uit, schuifje = dimmen) en deuren. De vorige statuspagina staat
+//   nu op /advanced (technisch). Omschrijvingen: D voordeur, W4 veldkant, S terras, W1 parking,
+//   N1 puntgevel rechts, N2 puntgevel links, E binnenplaats. /status_json + "lux".
 // v0.2.3 (12nov26): DIMMEN zoals ROOM (updateFades): elke wijziging van helderheid (PIR,
 //   manueel, schuifje) loopt zacht over de DIMTIJD (instelbaar 0–10 s, standaard 2 s, één
 //   waarde zoals ROOM) met een sinuscurve; stap om de 20 ms. GAMMACURVE 2,2: de helderheid in %
@@ -74,12 +80,13 @@
 #include <esp_system.h>
 #include <esp_attr.h>
 #include "hal/usb_serial_jtag_ll.h"
+#include "landing.h"              // v0.2.4: landingspagina "/"
 
 #if ARDUINO_USB_CDC_ON_BOOT
 #error "ACCESS: zet in de Arduino IDE Tools -> USB CDC On Boot op Disabled (seriele monitor via de poort UART)"
 #endif
 
-#define ACCESS_VERSION "v0.2.3"   // enige plaats met het versienummer
+#define ACCESS_VERSION "v0.2.4"   // enige plaats met het versienummer
 
 // ── ZONESLOTS (ACCESS_STANDAARD §1.1) ───────────────────────
 //            slot:      1    2    3    4
@@ -178,9 +185,9 @@ enum CrumbLoop : uint8_t { CL_NONE = 0, CL_SETUP, CL_WIFI, CL_PIR, CL_OUT, CL_ID
 const char* const CRUMB_LOOP_TXT[CL_COUNT] = {
   "onbekend", "opstarten (setup)", "WiFi-controle", "PIR lezen", "uitgangen", "wachten (rust)"
 };
-enum CrumbWeb : uint8_t { CW_NONE = 0, CW_HOME, CW_JSON, CW_SETTINGS, CW_SAVE, CW_OTA, CW_TEST, CW_OTHER, CW_ZONE, CW_COUNT };
+enum CrumbWeb : uint8_t { CW_NONE = 0, CW_HOME, CW_JSON, CW_SETTINGS, CW_SAVE, CW_OTA, CW_TEST, CW_OTHER, CW_ZONE, CW_ADV, CW_COUNT };
 const char* const CRUMB_WEB_TXT[CW_COUNT] = {
-  "geen", "/ (status)", "/json", "/settings", "/save_settings", "/update (OTA)", "/set_test", "andere opdracht", "/set_zone"
+  "geen", "/ (status)", "/json", "/settings", "/save_settings", "/update (OTA)", "/set_test", "andere opdracht", "/set_zone", "/advanced"
 };
 #define CRUMB_MAGIC 0x5A414331UL   // "ZAC1"
 RTC_NOINIT_ATTR uint32_t crumb_magic;
@@ -468,7 +475,7 @@ void pageHead(AsyncResponseStream* p, const char* title, const char* active) {
   p->print(F("<span style=\"font-size:12px;font-weight:normal;opacity:.75\"> &middot; ACCESS " ACCESS_VERSION "</span></div><div class=\"r\">"));
   p->printf("%lu s", (unsigned long)(millis() / 1000));
   p->print(F("</div></div><div class=\"nav\">"));
-  const char* links[][2] = { {"/", "Status"}, {"/settings", "Settings"}, {"/json", "JSON"}, {"/update", "OTA"} };
+  const char* links[][2] = { {"/", "Start"}, {"/advanced", "Technisch"}, {"/settings", "Settings"}, {"/json", "JSON"}, {"/update", "OTA"} };
   for (auto& l : links)
     p->printf("<a href=\"%s\"%s>%s</a>", l[0], strcmp(l[0], active) == 0 ? " class=\"on\"" : "", l[1]);
   p->print(F("</div><div class=\"m\">"));
@@ -479,10 +486,10 @@ void pageFoot(AsyncResponseStream* p) {
 }
 
 // ── WEB: status ("/") — ververst zichzelf via /status_json ──
-void handleStatus(AsyncWebServerRequest* req) {
-  crumbW(CW_HOME);
+void handleStatus(AsyncWebServerRequest* req) {          // v0.2.4: nu op /advanced
+  crumbW(CW_ADV);
   AsyncResponseStream* p = req->beginResponseStream("text/html; charset=utf-8");
-  pageHead(p, "ACCESS", "/");
+  pageHead(p, "ACCESS technisch", "/advanced");
   p->print(F("<h3>Zones</h3><p>Modus: <b id=\"mo\">&hellip;</b> &middot; <span id=\"nt\"></span></p>"
              "<table><tr><th>Zone</th><th>PIR</th><th>Beweging</th><th>Licht</th></tr>"));
   for (int z = 0; z < NUM_ZONES; z++) {
@@ -529,7 +536,23 @@ void handleStatus(AsyncWebServerRequest* req) {
   req->send(p);
 }
 
-// Gegevens voor de statuspagina (geen contract: kan wijzigen)
+// v0.2.4: landingspagina "/" (landing.h)
+void handleLanding(AsyncWebServerRequest* req) {
+  crumbW(CW_HOME);
+  AsyncResponseStream* p = req->beginResponseStream("text/html; charset=utf-8");
+  p->print(FPSTR(LANDING_KOP));
+  p->print(ctrl_name);
+  p->print(FPSTR(LANDING_MIDDEN));
+  p->print(F("<script>var CFG={ver:\"ACCESS " ACCESS_VERSION "\",codes:["));
+  for (int z = 0; z < NUM_ZONES; z++) p->printf("%s\"%s\"", z ? "," : "", zoneUsed(z) ? zone_code[z] : "");
+  p->print(F("],deuren:["));
+  for (int d = 0; d < NUM_DOORS; d++) p->printf("%s\"%s\"", d ? "," : "", door_code[d]);
+  p->print(F("]};</script>"));
+  p->print(FPSTR(LANDING_SCRIPT));
+  req->send(p);
+}
+
+// Gegevens voor de status- en landingspagina (geen contract: kan wijzigen)
 void handleStatusJson(AsyncWebServerRequest* req) {
   char b[700];
   int n = snprintf(b, sizeof(b), "{\"z\":[");
@@ -544,7 +567,7 @@ void handleStatusJson(AsyncWebServerRequest* req) {
                   door_code[d][0] ? 1 : 0, door_open[d] ? 1 : 0,
                   door_seen[d] ? (long)((millis() - door_last[d]) / 1000) : -1L, (unsigned long)door_count[d]);
   long ov = auto_mode ? 0 : (long)((int32_t)(override_until - millis()) / 1000);
-  snprintf(b + n, sizeof(b) - n, "],\"w\":%d,\"au\":%d,\"ov\":%ld,\"nt\":%d}", (int)WiFi.RSSI(),
+  snprintf(b + n, sizeof(b) - n, "],\"w\":%d,\"au\":%d,\"ov\":%ld,\"nt\":%d,\"lux\":-1}", (int)WiFi.RSSI(),
            auto_mode ? 1 : 0, ov < 0 ? 0 : ov, isNight() ? 1 : 0);
   req->send(200, "application/json", b);
 }
@@ -712,7 +735,8 @@ void handleUpdatePage(AsyncWebServerRequest* req) {
 }
 
 void setupWeb() {
-  server.on("/", HTTP_GET, handleStatus);
+  server.on("/", HTTP_GET, handleLanding);
+  server.on("/advanced", HTTP_GET, handleStatus);
   server.on("/json", HTTP_GET, handleJson);
   server.on("/status_json", HTTP_GET, handleStatusJson);
   server.on("/settings", HTTP_GET, handleSettings);
