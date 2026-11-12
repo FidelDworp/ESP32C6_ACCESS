@@ -131,6 +131,7 @@ De bron die in gebruik is, staat in de UI en in `/json`.
 
 - **Eén sketch** `ESP32_C6_ACCESS`, zelfde basis als de andere ESP32-sketches: vast IP, mDNS (`access1.local` …), `/settings`, `/update` (OTA), Diagnose (herstartreden, geheugen, WiFi), geen Matter.
 - **Landingspagina "/"** (`landing.h`, sinds v0.2.4): één pagina voor alle ACCESS-controllers met een vereenvoudigd grondplan (alle 7 zones en 4 deuren op een vaste plaats per code); elke controller kleurt en bedient alleen zijn eigen zones en deuren. Omschrijvingen: D voordeur · W4 veldkant · S terras · W1 parking · N1 puntgevel rechts · N2 puntgevel links · E binnenplaats. Technische pagina: `/advanced`.
+- **RPi-portal** (`server.js` v2.13): kaarten Buiten 1/2/3 en `access.html?id=1|2|3`, op basis van `/json` en `/set_zone`.
 - **Apple Home** via de RPi-bridge (`server.js`), zoals nu voor R8-ACCESS.
 - **Dashboard:** rij 3 (de 4 muren) leest later `/json` van ACCESS1–3 in plaats van de Photon, met de muurletters **W·S·N·E** (nu W·Z·N·O). Eigen Dashboard-versie, eigen GO.
 - **De lux in `/json`**, zodat ook het Dashboard, de ECO en anderen hem kunnen lezen. Daarmee is een aparte OUTSIDE-controller (.72) waarschijnlijk overbodig.
