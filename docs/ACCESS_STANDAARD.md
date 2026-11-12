@@ -90,7 +90,7 @@ Elke connector krijgt een **Optionix-plaatje** met 8 soldeercontacten. Zelfde ve
 Zonecodes in `/settings`: ACCESS1 slot 1 `D`, 2 `W4`, 3 `S` · ACCESS2 slot 1 `W1`, 2 `N1` · ACCESS3 slot 1 `N2`, 2 `E` (beslist 11/11). De oude R8-klemmen MOV-E, PWM-E, MOV-N1 en PWM-N1 worden op ACCESS1 **niet** aangesloten.
 
 - Gemeten 3,3 V op IO3 = pull-up 4,7 kΩ (T-BUS) op het shield; op IO6 = pull-up van de DHT-lijn (beide ideaal voor de reed-contacten); op IO1 = PWM uit + pull-up 10 kΩ; op de andere PWM-pinnen = uitgang uit (actief laag).
-- ⚠️ **Option 1 mat 0 V** op het testbord (11/11): daar hoort +5 V. Nakijken in het ontwerp van het shield vóór er PIR's of 5 V-sensoren aan komen.
+- ✅ **Option 1 = +5 V: opgelost (12/11).** Op **shield v1.0** heet die pin "reserve" en is hij niet verbonden: daar moet een **brugje naar 5 V** gesoldeerd worden (zo gedaan op het testbord). Vanaf **shield v2.0** is hij vast met 5 V verbonden.
 
 **Testbord:** de LED-driver op **slot 1**: stuuringang op **Option 5 (IO19)**, massa op **Option 7 (GND)**; een PIR op **RoomSense 1 (IO3)**, voeding RoomSense 8, massa RoomSense 7, 1 kΩ in serie op de signaalader.
 - **Gemeenschappelijke massa:** de min van de 24 V-voeding moet aan de GND van de ESP32, tenzij de stuuringang van de driver galvanisch gescheiden is (nakijken op de driver).
