@@ -1,6 +1,6 @@
 # ACCESS-standaard (Zarlar buitenverlichting)
 
-*v0.6 — 12 nov 2026 — Filip Delannoy (FiDel). Status: **vastgelegd** (zones, `/json`-keys, gedrag). Wijzigen alleen met akkoord van FiDel. Sketch: **v0.2.2** (zones, AUTO/MANUEEL, beweging per minuut), op het testbord.*
+*v0.6 — 12 nov 2026 — Filip Delannoy (FiDel). Status: **vastgelegd** (zones, `/json`-keys, gedrag). Wijzigen alleen met akkoord van FiDel. Sketch: **v0.2.3** (zones, AUTO/MANUEEL, beweging per minuut, dimmen), op het testbord.*
 
 **Functie:** de ACCESS-controllers gebruiken dezelfde processor en hetzelfde shield als de room-controllers, maar bedienen de **buitenverlichting rondom het huis**: PIR-sensoren detecteren beweging, en modules met een PWM-ingang dimmen de lichten. De standaardlampen zijn **2 LED's van 9,5 V / 300 mA in serie**, gevoed met 24 V door de modules.
 
@@ -110,6 +110,8 @@ Zonecodes in `/settings`: ACCESS1 slot 1 `D`, 2 `W4`, 3 `S` · ACCESS2 slot 1 `W
 |---|---|
 | **AUTO** (standaard) | **Beslist: nacht én beweging** (zoals de ROOM-sketch: donker én beweging). Licht aan op de ingestelde helderheid, uit na de brandtijd sinds de laatste beweging. Overdag gebeurt er niets |
 | **MANUEEL** (override) | **Beslist 8/11:** een zone manueel aan, dag of nacht. **Eén modus voor de hele controller** (`au`), zoals R8. Na de override-tijd (standaard **30 min**, instelbaar) of bij manueel uit: terug naar AUTO. Lampen die door een PIR aan gingen, gaan ook in MANUEEL uit na hun brandtijd |
+
+**Dimmen (beslist 12/11, sketch v0.2.3):** elke wijziging van helderheid loopt zacht over één **dimtijd** per controller (0–10 s, standaard 2 s, zoals ROOM), met een sinuscurve. De helderheid in % volgt een **gammacurve 2,2** (wat het oog ziet). `l<zone>` in `/json` is de doelhelderheid.
 
 Per zone in `/settings`: zonecode · muur (W, S, N, E) · aan/uit · helderheid (%) · brandtijd (standaard 30 s, zoals R8) · polariteit. Per controller: override-tijd. Geen meeschakelen tussen zones (de koppeling W1 → W2 van R8 vervalt).
 

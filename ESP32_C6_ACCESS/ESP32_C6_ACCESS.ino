@@ -11,6 +11,12 @@
 // Updaten: OTA via http://<ip>/update met bin/ESP32_C6_ACCESS_vX.Y.ino.bin
 //
 // ── VERSIEHISTORIE ──────────────────────────────────────────
+// v0.2.3 (12nov26): DIMMEN zoals ROOM (updateFades): elke wijziging van helderheid (PIR,
+//   manueel, schuifje) loopt zacht over de DIMTIJD (instelbaar 0–10 s, standaard 2 s, één
+//   waarde zoals ROOM) met een sinuscurve; stap om de 20 ms. GAMMACURVE 2,2: de helderheid in %
+//   is wat het oog ziet (1 % = heel zwak, 50 % = half zo fel). PWM-resolutie volgt de frequentie
+//   (14 bit bij 1 kHz) zodat ook 1 % nog vloeiend dimt; > 0 % is altijd minstens 1 tik aan.
+//   l<zone> in /json blijft de doelhelderheid.
 // v0.2.2 (12nov26): BEWEGING PER MINUUT, zoals ROOM (w/x): per zone een buffer van 20
 //   tijdstempels; m<zone> in /json = aantal triggers in het glijdende venster (standaard 60 s,
 //   instelbaar 10–600 s in /settings) i.p.v. "beweging laatste 10 min (1/0)" (beslist 12/11).
@@ -64,6 +70,7 @@
 #include <ESPAsyncWebServer.h>
 #include <Update.h>
 #include <Preferences.h>
+#include <math.h>                 // v0.2.3: sin() en pow() voor dimmen en gamma
 #include <esp_system.h>
 #include <esp_attr.h>
 #include "hal/usb_serial_jtag_ll.h"
@@ -72,7 +79,7 @@
 #error "ACCESS: zet in de Arduino IDE Tools -> USB CDC On Boot op Disabled (seriele monitor via de poort UART)"
 #endif
 
-#define ACCESS_VERSION "v0.2.2"   // enige plaats met het versienummer
+#define ACCESS_VERSION "v0.2.3"   // enige plaats met het versienummer
 
 // ── ZONESLOTS (ACCESS_STANDAARD §1.1) ───────────────────────
 //            slot:      1    2    3    4
@@ -86,8 +93,11 @@ const char* const PWM_LOC[4] = { "Option 5", "Option 4", "Option 2", "Sense 6" }
 #define NUM_DOORS   2
 const uint8_t DOOR_PIN[NUM_DOORS] = { 3, 6 };      // RoomSense 1 · RoomSense 3
 const char* const DOOR_LOC[NUM_DOORS] = { "Sense 1", "Sense 3" };
-#define PWM_BITS    10                              // 0..1023
-#define PWM_FULL    (1 << PWM_BITS)              // 1024 = constant hoog (echt 100 %, geen tik laag)
+// v0.2.3: resolutie volgt de frequentie (LEDC-klok 80 MHz): 14 bit bij 1 kHz, minder bij hogere Hz
+uint8_t  pwm_bits = 14;
+uint32_t pwm_full = 1UL << 14;                   // duty = pwm_full → constant hoog (echt 100 %)
+#define GAMMA       2.2f
+#define FADE_STEP_MS 20
 #define I2C_SDA     13                              // v0.3: TSL2561
 #define I2C_SCL     11
 #define MOV_BUF_SIZE 20                             // v0.2.2: tijdstempels per zone (zoals ROOM)
@@ -113,6 +123,7 @@ uint8_t  zone_bright[NUM_ZONES] = { 100, 100, 100, 100 };       // helderheid in
 uint16_t zone_burn_s[NUM_ZONES] = { 30, 30, 30, 30 };           // brandtijd na de laatste beweging (s)
 uint16_t override_min = 30;                                     // MANUEEL → terug naar AUTO na … min
 uint16_t mov_window_s = 60;                                     // v0.2.2: venster voor m<zone> (s)
+uint8_t  fade_s = 2;                                            // v0.2.3: dimtijd (s), 0 = direct (ROOM: fade_duration)
 bool     force_night  = true;                                   // tot v0.3: dag/nacht vast (true = altijd nacht)
 
 // ── TOESTAND ────────────────────────────────────────────────
@@ -196,18 +207,57 @@ void outputsSafeEarly() {
   }
 }
 
-void setOutput(int z, int pct) {
-  pct = constrain(pct, 0, 100);
-  out_pct[z] = pct;
-  uint32_t duty = (uint32_t)pct * PWM_FULL / 100;    // aandeel "aan"
-  if (active_low[z]) duty = PWM_FULL - duty;          // aan = laag; 0 % → constant hoog
+// v0.2.3: huidige (gedimde) helderheid per zone en de lopende overgang
+float fade_cur[NUM_ZONES]   = { 0, 0, 0, 0 };     // helderheid nu (%), tijdens het dimmen
+float fade_start[NUM_ZONES] = { 0, 0, 0, 0 };
+float fade_prog[NUM_ZONES]  = { 1, 1, 1, 1 };     // 0 → 1; 1 = klaar
+
+// Schrijft een helderheid (%, zoals het oog ze ziet) naar de PWM-pin, met gammacurve
+void writePwm(int z, float pct) {
+  uint32_t duty = 0;
+  if (pct > 0.0f) {
+    float lin = powf(constrain(pct, 0.0f, 100.0f) / 100.0f, GAMMA);
+    duty = (uint32_t)lroundf(lin * pwm_full);
+    if (duty < 1) duty = 1;                           // > 0 % is altijd minstens 1 tik aan
+  }
+  if (active_low[z]) duty = pwm_full - duty;           // aan = laag; 0 % → constant hoog
   ledcWrite(PWM_PIN[z], duty);
 }
 
-void outputsInit() {
+// Nieuwe doelhelderheid: start een zachte overgang (of direct bij dimtijd 0)
+void setOutput(int z, int pct) {
+  pct = constrain(pct, 0, 100);
+  out_pct[z] = pct;
+  if (fade_s == 0) { fade_cur[z] = pct; fade_prog[z] = 1; writePwm(z, pct); return; }
+  fade_start[z] = fade_cur[z];
+  fade_prog[z] = 0;
+}
+
+void updateFades() {                    // elke 20 ms
+  static uint32_t last = 0;
+  if (millis() - last < FADE_STEP_MS) return;
+  last = millis();
+  float step = fade_s ? (float)FADE_STEP_MS / (fade_s * 1000.0f) : 1.0f;
   for (int z = 0; z < NUM_ZONES; z++) {
-    ledcAttach(PWM_PIN[z], pwm_freq, PWM_BITS);
-    setOutput(z, 0);
+    if (fade_prog[z] >= 1.0f) continue;
+    fade_prog[z] += step;
+    if (fade_prog[z] >= 1.0f) { fade_prog[z] = 1.0f; fade_cur[z] = out_pct[z]; }
+    else {
+      float ease = sinf(fade_prog[z] * (float)M_PI / 2.0f);     // zoals ROOM
+      fade_cur[z] = fade_start[z] + (out_pct[z] - fade_start[z]) * ease;
+    }
+    writePwm(z, fade_cur[z]);
+  }
+}
+
+void outputsInit() {
+  pwm_bits = 14;                                       // v0.2.3: zo fijn als de frequentie toelaat
+  while (pwm_bits > 8 && (uint32_t)pwm_freq * (1UL << pwm_bits) > 40000000UL) pwm_bits--;
+  pwm_full = 1UL << pwm_bits;
+  for (int z = 0; z < NUM_ZONES; z++) {
+    ledcAttach(PWM_PIN[z], pwm_freq, pwm_bits);
+    out_pct[z] = 0; fade_cur[z] = 0; fade_prog[z] = 1;
+    writePwm(z, 0);
   }
 }
 
@@ -241,6 +291,7 @@ void loadSettings() {
   }
   override_min = constrain(prefs.getUShort("ov_min", 30), 1, 240);
   mov_window_s = constrain(prefs.getUShort("mov_win", 60), 10, 600);
+  fade_s       = constrain(prefs.getUChar("fade_s", 2), 0, 10);
   force_night  = prefs.getBool("nf", true);
   for (int d = 0; d < NUM_DOORS; d++) {
     char k[8]; snprintf(k, sizeof(k), "dc%d", d + 1);
@@ -542,6 +593,7 @@ void handleSettings(AsyncWebServerRequest* req) {
               z + 1, zone_en[z] ? " selected" : "", zone_en[z] ? "" : " selected",
               z + 1, zone_bright[z], z + 1, zone_burn_s[z]);
   p->print(F("<tr><td colspan=\"2\" class=\"dim\">Zonecode = de naam van de zone overal (ACCESS1: D, W4, S; ACCESS2: W1, N1; ACCESS3: N2, E). Leeg = slot niet gebruikt.</td></tr>"));
+  p->printf("<tr><td>Dimtijd (zacht aan en uit)</td><td><input type=\"number\" name=\"fd\" min=\"0\" max=\"10\" value=\"%u\" style=\"width:5em\"> s <span class=\"dim\">(0 = direct)</span></td></tr>", fade_s);
   p->printf("<tr><td>Venster beweging (m&lt;zone&gt; = triggers in dit venster)</td><td><input type=\"number\" name=\"mw\" min=\"10\" max=\"600\" value=\"%u\" style=\"width:5em\"> s</td></tr>", mov_window_s);
   p->printf("<tr><td>Override-tijd (MANUEEL → AUTO)</td><td><input type=\"number\" name=\"ov\" min=\"1\" max=\"240\" value=\"%u\" style=\"width:5em\"> min</td></tr>", override_min);
   p->printf("<tr><td>Dag/nacht (tot v0.3, lux)</td><td><select name=\"nf\"><option value=\"1\"%s>altijd nacht (PIR's werken)</option>"
@@ -602,7 +654,7 @@ void handleSave(AsyncWebServerRequest* req) {
     char k[8]; snprintf(k, sizeof(k), "pol%d", z + 1);
     if (!req->hasParam(k)) continue;
     bool al = req->getParam(k)->value() == "1";
-    if (al != active_low[z]) { active_low[z] = al; prefs.putBool(k, al); setOutput(z, out_pct[z]); }
+    if (al != active_low[z]) { active_low[z] = al; prefs.putBool(k, al); writePwm(z, fade_cur[z]); }
   }
   for (int z = 0; z < NUM_ZONES; z++) {             // zonecode: hoofdletters/cijfers, max 3 tekens
     char k[8]; snprintf(k, sizeof(k), "zc%d", z + 1);
@@ -622,6 +674,7 @@ void handleSave(AsyncWebServerRequest* req) {
     snprintf(k, sizeof(k), "zt%d", z + 1);
     if (req->hasParam(k)) { uint16_t v = constrain(req->getParam(k)->value().toInt(), 5, 3600); if (v != zone_burn_s[z]) { zone_burn_s[z] = v; prefs.putUShort(k, v); } }
   }
+  if (req->hasParam("fd")) { uint8_t v = constrain(req->getParam("fd")->value().toInt(), 0, 10); if (v != fade_s) { fade_s = v; prefs.putUChar("fade_s", v); } }
   if (req->hasParam("mw")) { uint16_t v = constrain(req->getParam("mw")->value().toInt(), 10, 600); if (v != mov_window_s) { mov_window_s = v; prefs.putUShort("mov_win", v); } }
   if (req->hasParam("ov")) { uint16_t v = constrain(req->getParam("ov")->value().toInt(), 1, 240); if (v != override_min) { override_min = v; prefs.putUShort("ov_min", v); } }
   if (req->hasParam("nf")) { bool v = req->getParam("nf")->value() == "1"; if (v != force_night) { force_night = v; prefs.putBool("nf", v); } }
@@ -774,10 +827,10 @@ void loop() {
   crumbL(CL_WIFI);  checkWiFi();
   if (ap_mode) dnsServer.processNextRequest();
   crumbL(CL_PIR);   readPIRs();
-  crumbL(CL_OUT);   updateZones();
+  crumbL(CL_OUT);   updateZones(); updateFades();
   crumbL(CL_IDLE);
   if (restart_requested && (int32_t)(millis() - restart_at) >= 0) {
-    for (int z = 0; z < NUM_ZONES; z++) setOutput(z, 0);
+    for (int z = 0; z < NUM_ZONES; z++) writePwm(z, 0);
     delay(100);
     ESP.restart();
   }

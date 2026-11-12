@@ -1,6 +1,6 @@
 # Overdracht — ACCESS (buitenverlichting, ESP32C6_ACCESS)
 
-*Stand 12 november 2026, 20:00 — Filip Delannoy (FiDel), Zarlardinge (BE)*
+*Stand 12 november 2026, 20:15 — Filip Delannoy (FiDel), Zarlardinge (BE)*
 
 Dit document start een nieuw gesprek met Claude over de buitenverlichting: de Photon R8-ACCESS van vandaag en de ESP32-controllers ACCESS1–3 die nog ontworpen moeten worden. Alle details: [`README.md`](../README.md).
 
@@ -49,7 +49,7 @@ Afwijkingen van de Photon-sketch: zie §6.1 van de standaard.
 5. PIReX-combinatie MOV-W1 + MOV-W3 + MOV-DN nakijken (W1 gaat naar ACCESS2).
 
 6. **Gepland (voorstel 12/11, nog geen GO):**
-   - **v0.2.3 dimmen** zoals ROOM (sinuscurve), voorstel: dimtijd aan 1 s / uit 3 s, gammacurve ±2,2. Open: één of twee dimtijden, gamma ja/nee.
+   - **v0.2.3 dimmen: klaar** (`bin/ESP32_C6_ACCESS_v0.2.3.ino.bin`): één dimtijd (0–10 s, standaard 2 s, zoals ROOM), sinuscurve, gammacurve 2,2, PWM 14 bit bij 1 kHz (beslist 12/11).
    - **v0.2.4 landingspagina** (`landing.h`, zoals ROOM; huidige statuspagina → `/advanced`): modusknop, dag/nacht, vereenvoudigd grondplan (FiDels tekening, met het afdak boven de voordeur aan de westkant) met alle 7 zones en 4 deuren, vast per zonecode in de pagina; elke controller kleurt en bedient alleen zijn eigen zones/deuren, de rest grijs. Tegels per zone (tik = aan/uit, schuifje = dimmen).
    - **Plaats van de deuren op het plan (FiDel 12/11):** VD onder het afdak · SD aan de tuinzijde (S), links · AD aan de oostkant op de plaats van de trap (bovenaan, bij E1) · BD binnen de huisomtrek, links van AD.
-   - Open: omschrijving per zone (D voordeur, W4 veldkant, S terras, W1 ?, N1 ?, N2 ?, E ?).
+   - Omschrijvingen per zone (FiDel 12/11): D voordeur · W4 veldkant · S terras · W1 parking · N1 en N2 puntgevel · E binnenplaats. (Na te vragen: krijgen N1 en N2 elk een eigen naam?)
