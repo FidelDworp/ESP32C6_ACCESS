@@ -11,6 +11,21 @@
 // Updaten: OTA via http://<ip>/update met bin/ESP32_C6_ACCESS_vX.Y.ino.bin
 //
 // ── VERSIEHISTORIE ──────────────────────────────────────────
+// v0.2 (12nov26): ZONES (standaard §2.1, §3.1).
+//   - AUTO: beweging → licht aan op de helderheid van de zone, uit na de brandtijd sinds de
+//     laatste beweging. Dag/nacht komt in v0.3 (lux): tot dan de instelling "dag/nacht"
+//     (standaard ALTIJD NACHT, om te testen). In MANUEEL starten PIR's geen licht; wat door
+//     een PIR brandde, gaat uit na zijn brandtijd.
+//   - MANUEEL (override, één modus per controller, au): /set_zone?z=<zone>&v=1[&b=0..100] zet
+//     een zone manueel aan; na de override-tijd (standaard 30 min) of bij v=0 (zone uit) gaat
+//     de hele controller terug naar AUTO.
+//   - /settings: per zone aan/uit, helderheid (100 %), brandtijd (30 s); per controller
+//     override-tijd en dag/nacht. Statuspagina: knoppen Aan/Uit + helderheidsschuifje per zone,
+//     modus en resterende override-tijd.
+//   - FIX: PIR-ingangen met interne pull-down (zwevende ingangen gaven duizenden valse
+//     bewegingen); slots zonder zonecode of uitgeschakeld worden niet gelezen.
+//   - /json: echte l<zone>, au en nt. Geen nieuwe keys. /set_test blijft (test, overschrijft
+//     de zone tot /set_test?b=-1 of een /set_zone), niet meer op de pagina.
 // v0.1.1 (12nov26): PINVERDELING NA DE PIR-TEST (standaard §1.1 / §6.2). Een AM312 op IO3
 //   werkte niet: zijn uitgang kan de 4,7 kΩ pull-up van de DS18B20-bus op het shield niet laag
 //   trekken (rust 2,71 V). PIR's nu op pinnen zonder pull-up: slot 1 IO5, slot 2 IO12,
@@ -47,7 +62,7 @@
 #error "ACCESS: zet in de Arduino IDE Tools -> USB CDC On Boot op Disabled (seriele monitor via de poort UART)"
 #endif
 
-#define ACCESS_VERSION "v0.1.1"   // enige plaats met het versienummer
+#define ACCESS_VERSION "v0.2"   // enige plaats met het versienummer
 
 // ── ZONESLOTS (ACCESS_STANDAARD §1.1) ───────────────────────
 //            slot:      1    2    3    4
@@ -78,6 +93,12 @@ char zone_code[NUM_ZONES][4] = { "D", "W4", "S", "" };
 // Deurcode per reed-ingang (standaard §4.1). Standaard die van ACCESS1: SD (schuifdeur), VD (voordeur).
 char door_code[NUM_DOORS][4] = { "SD", "VD" };
 bool door_closed_low[NUM_DOORS] = { true, true };   // contact gesloten (0 V) = deur dicht
+// v0.2: zones en modus
+bool     zone_en[NUM_ZONES]     = { true, true, true, true };   // zone aan/uit
+uint8_t  zone_bright[NUM_ZONES] = { 100, 100, 100, 100 };       // helderheid in AUTO (%)
+uint16_t zone_burn_s[NUM_ZONES] = { 30, 30, 30, 30 };           // brandtijd na de laatste beweging (s)
+uint16_t override_min = 30;                                     // MANUEEL → terug naar AUTO na … min
+bool     force_night  = true;                                   // tot v0.3: dag/nacht vast (true = altijd nacht)
 
 // ── TOESTAND ────────────────────────────────────────────────
 uint8_t  out_pct[NUM_ZONES]   = { 0, 0, 0, 0 };    // helderheid nu (0–100 %); v0.1: alleen TEST
@@ -86,6 +107,14 @@ bool     pir_seen[NUM_ZONES]  = { false, false, false, false };
 uint32_t pir_last[NUM_ZONES]  = { 0, 0, 0, 0 };
 uint32_t pir_count[NUM_ZONES] = { 0, 0, 0, 0 };    // aantal keer beweging sinds opstart
 bool     door_open[NUM_DOORS]  = { false, false };   // ontdenderde toestand
+// v0.2: modus en zonetoestand
+bool     auto_mode = true;                           // au: true = AUTO, false = MANUEEL
+uint32_t override_until = 0;                         // millis waarop MANUEEL afloopt
+bool     zone_manual[NUM_ZONES]   = { false, false, false, false };  // manueel aan
+uint8_t  zone_manual_b[NUM_ZONES] = { 100, 100, 100, 100 };
+bool     pir_lit[NUM_ZONES]       = { false, false, false, false };  // brandt door een PIR
+uint32_t pir_off_at[NUM_ZONES]    = { 0, 0, 0, 0 };
+int8_t   test_pct[NUM_ZONES]      = { -1, -1, -1, -1 };  // /set_test: −1 = geen test
 uint8_t  door_raw_n[NUM_DOORS] = { 0, 0 };           // aantal opeenvolgende afwijkende lezingen
 bool     door_seen[NUM_DOORS]  = { false, false };
 uint32_t door_last[NUM_DOORS]  = { 0, 0 };           // laatste opening (millis)
@@ -122,9 +151,9 @@ enum CrumbLoop : uint8_t { CL_NONE = 0, CL_SETUP, CL_WIFI, CL_PIR, CL_OUT, CL_ID
 const char* const CRUMB_LOOP_TXT[CL_COUNT] = {
   "onbekend", "opstarten (setup)", "WiFi-controle", "PIR lezen", "uitgangen", "wachten (rust)"
 };
-enum CrumbWeb : uint8_t { CW_NONE = 0, CW_HOME, CW_JSON, CW_SETTINGS, CW_SAVE, CW_OTA, CW_TEST, CW_OTHER, CW_COUNT };
+enum CrumbWeb : uint8_t { CW_NONE = 0, CW_HOME, CW_JSON, CW_SETTINGS, CW_SAVE, CW_OTA, CW_TEST, CW_OTHER, CW_ZONE, CW_COUNT };
 const char* const CRUMB_WEB_TXT[CW_COUNT] = {
-  "geen", "/ (status)", "/json", "/settings", "/save_settings", "/update (OTA)", "/set_test", "andere opdracht"
+  "geen", "/ (status)", "/json", "/settings", "/save_settings", "/update (OTA)", "/set_test", "andere opdracht", "/set_zone"
 };
 #define CRUMB_MAGIC 0x5A414331UL   // "ZAC1"
 RTC_NOINIT_ATTR uint32_t crumb_magic;
@@ -190,7 +219,12 @@ void loadSettings() {
     active_low[z] = prefs.getBool(k, true);
     snprintf(k, sizeof(k), "zc%d", z + 1);
     if (prefs.isKey(k)) prefs.getString(k, zone_code[z], sizeof(zone_code[z]));
+    snprintf(k, sizeof(k), "ze%d", z + 1); zone_en[z]     = prefs.getBool(k, true);
+    snprintf(k, sizeof(k), "zb%d", z + 1); zone_bright[z] = constrain(prefs.getUChar(k, 100), 1, 100);
+    snprintf(k, sizeof(k), "zt%d", z + 1); zone_burn_s[z] = constrain(prefs.getUShort(k, 30), 5, 3600);
   }
+  override_min = constrain(prefs.getUShort("ov_min", 30), 1, 240);
+  force_night  = prefs.getBool("nf", true);
   for (int d = 0; d < NUM_DOORS; d++) {
     char k[8]; snprintf(k, sizeof(k), "dc%d", d + 1);
     if (prefs.isKey(k)) prefs.getString(k, door_code[d], sizeof(door_code[d]));
@@ -243,13 +277,14 @@ void checkWiFi() {                      // elke 10 s; herverbinden hoogstens om 
 
 // ── PIR ─────────────────────────────────────────────────────
 void readDoors();                       // hieronder
+bool zoneUsed(int z) { return zone_code[z][0] && zone_en[z]; }
 
 void readPIRs() {                       // elke 50 ms
   static uint32_t last = 0;
   if (millis() - last < 50) return;
   last = millis();
   for (int z = 0; z < NUM_ZONES; z++) {
-    bool v = digitalRead(PIR_PIN[z]) == HIGH;
+    bool v = zoneUsed(z) && digitalRead(PIR_PIN[z]) == HIGH;   // v0.2: alleen gebruikte zones
     if (v && !pir_now[z]) pir_count[z]++;
     if (v) { pir_seen[z] = true; pir_last[z] = millis(); }
     pir_now[z] = v;
@@ -278,6 +313,48 @@ void readDoors() {                      // samen met de PIR's, elke 50 ms; 2 gel
 
 int motionRecent(int z) {
   return (pir_seen[z] && millis() - pir_last[z] < MOTION_RECENT_MS) ? 1 : 0;
+}
+
+// ── ZONES (v0.2, standaard §2.1) ────────────────────────────
+bool isNight() { return force_night; }      // v0.3: lux, andere ACCESS of berekende zon
+
+int zoneByCode(const String& c) {
+  for (int z = 0; z < NUM_ZONES; z++)
+    if (zone_code[z][0] && c.equalsIgnoreCase(zone_code[z])) return z;
+  return -1;
+}
+
+void backToAuto(const char* why) {
+  auto_mode = true;
+  for (int z = 0; z < NUM_ZONES; z++) zone_manual[z] = false;
+  Serial.printf("[MODUS] AUTO (%s)\n", why);
+}
+
+void updateZones() {                    // elke 50 ms, na readPIRs()
+  static uint32_t last = 0;
+  if (millis() - last < 50) return;
+  last = millis();
+  uint32_t now = millis();
+  if (!auto_mode && (int32_t)(now - override_until) >= 0) backToAuto("override-tijd voorbij");
+  bool night = isNight();
+  for (int z = 0; z < NUM_ZONES; z++) {
+    int target = 0;
+    if (zoneUsed(z)) {
+      if (pir_now[z] && auto_mode && night) {               // AUTO: beweging + nacht
+        pir_lit[z] = true;
+        pir_off_at[z] = now + (uint32_t)zone_burn_s[z] * 1000UL;
+      } else if (pir_now[z] && pir_lit[z]) {                // brandt al: brandtijd verlengen
+        pir_off_at[z] = now + (uint32_t)zone_burn_s[z] * 1000UL;
+      }
+      if (pir_lit[z] && (int32_t)(now - pir_off_at[z]) >= 0) pir_lit[z] = false;
+      if (zone_manual[z])  target = zone_manual_b[z];
+      else if (pir_lit[z]) target = zone_bright[z];
+    } else {
+      pir_lit[z] = false; zone_manual[z] = false;
+    }
+    if (test_pct[z] >= 0) target = test_pct[z];             // /set_test gaat voor
+    if (target != out_pct[z]) setOutput(z, target);
+  }
 }
 
 // ── WEB: gedeelde opmaak ────────────────────────────────────
@@ -318,32 +395,40 @@ void handleStatus(AsyncWebServerRequest* req) {
   crumbW(CW_HOME);
   AsyncResponseStream* p = req->beginResponseStream("text/html; charset=utf-8");
   pageHead(p, "ACCESS", "/");
-  p->print(F("<h3>Zones</h3><table><tr><th>Slot</th><th>PIR</th><th>Beweging</th><th>Licht (TEST, niet bewaard)</th></tr>"));
-  for (int z = 0; z < NUM_ZONES; z++)
-    p->printf("<tr><td>%d <b>%s</b></td><td>IO%d: <span id=\"p%d\">&hellip;</span></td><td id=\"m%d\">&hellip;</td>"
-              "<td>IO%d <input type=\"range\" min=\"0\" max=\"100\" value=\"%d\" id=\"r%d\" style=\"width:45%%\" "
-              "oninput=\"document.getElementById('b%d').textContent=this.value+' %%'\" "
-              "onchange=\"fetch('/set_test?z=%d&b='+this.value)\"> <span id=\"b%d\">%d %%</span></td></tr>",
-              z + 1, zone_code[z][0] ? zone_code[z] : "(vrij)", PIR_PIN[z], z, z,
-              PWM_PIN[z], out_pct[z], z, z, z + 1, z, out_pct[z]);
+  p->print(F("<h3>Zones</h3><p>Modus: <b id=\"mo\">&hellip;</b> &middot; <span id=\"nt\"></span></p>"
+             "<table><tr><th>Zone</th><th>PIR</th><th>Beweging</th><th>Licht</th></tr>"));
+  for (int z = 0; z < NUM_ZONES; z++) {
+    if (!zone_code[z][0]) continue;                   // vrije slots niet tonen
+    p->printf("<tr><td><b>%s</b><br><span class=\"dim\">slot %d%s</span></td><td>IO%d: <span id=\"p%d\">&hellip;</span></td><td id=\"m%d\">&hellip;</td>"
+              "<td><span id=\"b%d\">%d %%</span> <button class=\"btn\" style=\"padding:4px 10px\" onclick=\"zs(%d,1)\">Aan</button>"
+              "<button class=\"btn red\" style=\"padding:4px 10px\" onclick=\"zs(%d,0)\">Uit</button><br>"
+              "<input type=\"range\" min=\"1\" max=\"100\" value=\"%d\" id=\"r%d\" style=\"width:90%%\" "
+              "oninput=\"document.getElementById('b%d').textContent=this.value+' %%'\" onchange=\"zs(%d,1,this.value)\"></td></tr>",
+              zone_code[z], z + 1, zone_en[z] ? "" : " &middot; uit", PIR_PIN[z], z, z,
+              z, out_pct[z], z, z, zone_manual_b[z], z, z, z);
+  }
   p->print(F("</table><h3>Deuren</h3><table><tr><th>Ingang</th><th>Deur</th><th>Toestand</th><th>Laatst open</th></tr>"));
   for (int d = 0; d < NUM_DOORS; d++)
     p->printf("<tr><td>IO%d</td><td><b>%s</b></td><td id=\"d%d\">&hellip;</td><td id=\"e%d\">&hellip;</td></tr>",
               DOOR_PIN[d], door_code[d][0] ? door_code[d] : "(vrij)", d, d);
-  p->print(F("</table><p class=\"dim\">v0.1.1: aansluitingen testen. De schuifjes zetten een uitgang tijdelijk (0 % = uit). "
-             "Zones, AUTO/MANUEEL (v0.2), dag/nacht met lux (v0.3) en deuren in /json (v0.5) volgen.</p>"));
+  p->print(F("</table><p class=\"dim\">Aan = zone manueel aan (de controller gaat naar MANUEEL); Uit = zone uit en terug naar AUTO. "
+             "Dag/nacht met lux volgt in v0.3, deuren in /json in v0.5.</p>"));
   p->print(F("<h3>Netwerk</h3><table>"));
   p->printf("<tr><td>IP</td><td>%s</td></tr><tr><td>Naam</td><td>%s</td></tr><tr><td>WiFi</td><td id=\"w\">%d dBm</td></tr>",
             ap_mode ? "192.168.4.1 (toegangspunt)" : WiFi.localIP().toString().c_str(),
             mdns_ok ? (String(mdns_name) + ".local").c_str() : "&mdash;", (int)WiFi.RSSI());
-  p->print(F("</table><script>"
+  p->print(F("</table><script>var CODES=["));
+  for (int z = 0; z < NUM_ZONES; z++) p->printf("%s'%s'", z ? "," : "", zone_code[z]);
+  p->print(F("];"
     "function ago(s){return s<0?'<span class=\"dim\">nog niet</span>':(s<120?s+' s':Math.round(s/60)+' min')+' geleden';}"
+    "function zs(i,v,b){var c=CODES[i];fetch('/set_zone?z='+c+'&v='+v+(b?'&b='+b:'')).then(upd);}"
     "function upd(){fetch('/status_json').then(r=>r.json()).then(d=>{"
-      "d.z.forEach((z,i)=>{"
+      "document.getElementById('mo').innerHTML=d.au?'AUTO':'<span class=\"bad\">MANUEEL</span> (nog '+Math.ceil(d.ov/60)+' min)';"
+      "document.getElementById('nt').textContent=(d.nt?'nacht':'dag')+' (vast, tot v0.3)';"
+      "d.z.forEach((z,i)=>{if(!document.getElementById('p'+i))return;"
         "document.getElementById('p'+i).innerHTML=z.p?'<span class=\"ok\">beweging</span>':'rust';"
         "document.getElementById('m'+i).innerHTML=ago(z.a)+(z.n?' &middot; '+z.n+'&times;':'');"
-        "var r=document.getElementById('r'+i);if(document.activeElement!==r){r.value=z.l;"
-          "document.getElementById('b'+i).textContent=z.l+' %';}"
+        "document.getElementById('b'+i).innerHTML=z.l+' %'+(z.m?' <span class=\"bad\">manueel</span>':(z.k?' <span class=\"ok\">PIR</span>':''))+(z.t?' <span class=\"bad\">TEST</span>':'');"
       "});"
       "d.d.forEach((x,i)=>{"
         "document.getElementById('d'+i).innerHTML=x.c?(x.o?'<span class=\"bad\">OPEN</span>':'<span class=\"ok\">dicht</span>'):'<span class=\"dim\">niet gebruikt</span>';"
@@ -358,18 +443,21 @@ void handleStatus(AsyncWebServerRequest* req) {
 
 // Gegevens voor de statuspagina (geen contract: kan wijzigen)
 void handleStatusJson(AsyncWebServerRequest* req) {
-  char b[520];
+  char b[700];
   int n = snprintf(b, sizeof(b), "{\"z\":[");
   for (int z = 0; z < NUM_ZONES; z++)
-    n += snprintf(b + n, sizeof(b) - n, "%s{\"p\":%d,\"a\":%ld,\"n\":%lu,\"l\":%d}", z ? "," : "",
+    n += snprintf(b + n, sizeof(b) - n, "%s{\"p\":%d,\"a\":%ld,\"n\":%lu,\"l\":%d,\"m\":%d,\"k\":%d,\"t\":%d}", z ? "," : "",
                   pir_now[z] ? 1 : 0, pir_seen[z] ? (long)((millis() - pir_last[z]) / 1000) : -1L,
-                  (unsigned long)pir_count[z], out_pct[z]);
+                  (unsigned long)pir_count[z], out_pct[z], zone_manual[z] ? 1 : 0, pir_lit[z] ? 1 : 0,
+                  test_pct[z] >= 0 ? 1 : 0);
   n += snprintf(b + n, sizeof(b) - n, "],\"d\":[");
   for (int d = 0; d < NUM_DOORS; d++)
     n += snprintf(b + n, sizeof(b) - n, "%s{\"c\":%d,\"o\":%d,\"a\":%ld,\"n\":%lu}", d ? "," : "",
                   door_code[d][0] ? 1 : 0, door_open[d] ? 1 : 0,
                   door_seen[d] ? (long)((millis() - door_last[d]) / 1000) : -1L, (unsigned long)door_count[d]);
-  snprintf(b + n, sizeof(b) - n, "],\"w\":%d}", (int)WiFi.RSSI());
+  long ov = auto_mode ? 0 : (long)((int32_t)(override_until - millis()) / 1000);
+  snprintf(b + n, sizeof(b) - n, "],\"w\":%d,\"au\":%d,\"ov\":%ld,\"nt\":%d}", (int)WiFi.RSSI(),
+           auto_mode ? 1 : 0, ov < 0 ? 0 : ov, isNight() ? 1 : 0);
   req->send(200, "application/json", b);
 }
 
@@ -386,8 +474,8 @@ void handleJson(AsyncWebServerRequest* req) {
   }
   uint32_t heap = ESP.getFreeHeap(), total = ESP.getHeapSize();
   n += snprintf(b + n, sizeof(b) - n,
-    ",\"au\":1,\"lux\":-1,\"nt\":0,\"lb\":-1,\"ac\":%d,\"ad\":%u,\"ae\":%u,\"af\":%u}",
-    (int)WiFi.RSSI(), total ? (unsigned)(heap * 100UL / total) : 0,
+    ",\"au\":%d,\"lux\":-1,\"nt\":%d,\"lb\":-1,\"ac\":%d,\"ad\":%u,\"ae\":%u,\"af\":%u}",
+    auto_mode ? 1 : 0, isNight() ? 1 : 0, (int)WiFi.RSSI(), total ? (unsigned)(heap * 100UL / total) : 0,
     (unsigned)ESP.getMaxAllocHeap(), (unsigned)ESP.getMinFreeHeap());
   req->send(200, "application/json", b);
 }
@@ -408,10 +496,19 @@ void handleSettings(AsyncWebServerRequest* req) {
     p->printf("<tr><td>Slot %d (PIR IO%d, licht IO%d)</td><td>zonecode <input type=\"text\" name=\"zc%d\" maxlength=\"3\" value=\"%s\" "
               "style=\"width:4em\" placeholder=\"vrij\"> &middot; licht aan bij "
               "<label><input type=\"radio\" name=\"pol%d\" value=\"1\"%s> 0 V</label> "
-              "<label><input type=\"radio\" name=\"pol%d\" value=\"0\"%s> 3,3 V</label></td></tr>",
+              "<label><input type=\"radio\" name=\"pol%d\" value=\"0\"%s> 3,3 V</label><br>"
+              "zone <select name=\"ze%d\"><option value=\"1\"%s>aan</option><option value=\"0\"%s>uit</option></select> &middot; "
+              "helderheid <input type=\"number\" name=\"zb%d\" min=\"1\" max=\"100\" value=\"%u\" style=\"width:4.5em\"> %% &middot; "
+              "brandtijd <input type=\"number\" name=\"zt%d\" min=\"5\" max=\"3600\" value=\"%u\" style=\"width:5em\"> s</td></tr>",
               z + 1, PIR_PIN[z], PWM_PIN[z], z + 1, zone_code[z],
-              z + 1, active_low[z] ? " checked" : "", z + 1, active_low[z] ? "" : " checked");
+              z + 1, active_low[z] ? " checked" : "", z + 1, active_low[z] ? "" : " checked",
+              z + 1, zone_en[z] ? " selected" : "", zone_en[z] ? "" : " selected",
+              z + 1, zone_bright[z], z + 1, zone_burn_s[z]);
   p->print(F("<tr><td colspan=\"2\" class=\"dim\">Zonecode = de naam van de zone overal (ACCESS1: D, W4, S; ACCESS2: W1, N1; ACCESS3: N2, E). Leeg = slot niet gebruikt.</td></tr>"));
+  p->printf("<tr><td>Override-tijd (MANUEEL → AUTO)</td><td><input type=\"number\" name=\"ov\" min=\"1\" max=\"240\" value=\"%u\" style=\"width:5em\"> min</td></tr>", override_min);
+  p->printf("<tr><td>Dag/nacht (tot v0.3, lux)</td><td><select name=\"nf\"><option value=\"1\"%s>altijd nacht (PIR's werken)</option>"
+            "<option value=\"0\"%s>altijd dag (AUTO doet niets)</option></select></td></tr>",
+            force_night ? " selected" : "", force_night ? "" : " selected");
   p->print(F("</table><h3>Deuren (reed-contacten)</h3><table>"));
   for (int d = 0; d < NUM_DOORS; d++)
     p->printf("<tr><td>Ingang %d (IO%d)</td><td>deurcode <input type=\"text\" name=\"dc%d\" maxlength=\"3\" value=\"%s\" "
@@ -478,6 +575,17 @@ void handleSave(AsyncWebServerRequest* req) {
     c[j] = 0;
     if (strcmp(c, zone_code[z])) { strlcpy(zone_code[z], c, sizeof(zone_code[z])); prefs.putString(k, c); }
   }
+  for (int z = 0; z < NUM_ZONES; z++) {             // v0.2: zone aan/uit, helderheid, brandtijd
+    char k[8];
+    snprintf(k, sizeof(k), "ze%d", z + 1);
+    if (req->hasParam(k)) { bool v = req->getParam(k)->value() == "1"; if (v != zone_en[z]) { zone_en[z] = v; prefs.putBool(k, v); } }
+    snprintf(k, sizeof(k), "zb%d", z + 1);
+    if (req->hasParam(k)) { uint8_t v = constrain(req->getParam(k)->value().toInt(), 1, 100); if (v != zone_bright[z]) { zone_bright[z] = v; prefs.putUChar(k, v); } }
+    snprintf(k, sizeof(k), "zt%d", z + 1);
+    if (req->hasParam(k)) { uint16_t v = constrain(req->getParam(k)->value().toInt(), 5, 3600); if (v != zone_burn_s[z]) { zone_burn_s[z] = v; prefs.putUShort(k, v); } }
+  }
+  if (req->hasParam("ov")) { uint16_t v = constrain(req->getParam("ov")->value().toInt(), 1, 240); if (v != override_min) { override_min = v; prefs.putUShort("ov_min", v); } }
+  if (req->hasParam("nf")) { bool v = req->getParam("nf")->value() == "1"; if (v != force_night) { force_night = v; prefs.putBool("nf", v); } }
   for (int d = 0; d < NUM_DOORS; d++) {             // deurcode + betekenis van het contact
     char k[8]; snprintf(k, sizeof(k), "dc%d", d + 1);
     if (req->hasParam(k)) {
@@ -535,7 +643,26 @@ void setupWeb() {
     if (!req->hasParam("z") || !req->hasParam("b")) { req->send(400, "text/plain", "z=1..4&b=0..100"); return; }
     int z = req->getParam("z")->value().toInt() - 1;
     if (z < 0 || z >= NUM_ZONES) { req->send(400, "text/plain", "z=1..4"); return; }
-    setOutput(z, req->getParam("b")->value().toInt());
+    int b = req->getParam("b")->value().toInt();
+    test_pct[z] = b < 0 ? -1 : constrain(b, 0, 100);   // b=-1: test stoppen
+    req->send(200, "text/plain", "OK");
+  });
+  // v0.2: bediening (contract, standaard §3.1): /set_zone?z=<zone>&v=1|0[&b=0..100]
+  server.on("/set_zone", HTTP_GET, [](AsyncWebServerRequest* req) {
+    crumbW(CW_ZONE);
+    if (!req->hasParam("z") || !req->hasParam("v")) { req->send(400, "text/plain", "z=<zone>&v=1|0[&b=0..100]"); return; }
+    int z = zoneByCode(req->getParam("z")->value());
+    if (z < 0 || !zone_en[z]) { req->send(404, "text/plain", "zone onbekend of uit"); return; }
+    for (int i = 0; i < NUM_ZONES; i++) test_pct[i] = -1;   // een echte opdracht stopt elke test
+    if (req->getParam("v")->value() == "1") {
+      uint8_t b = req->hasParam("b") ? constrain(req->getParam("b")->value().toInt(), 0, 100) : zone_bright[z];
+      zone_manual[z] = true; zone_manual_b[z] = b;
+      auto_mode = false; override_until = millis() + (uint32_t)override_min * 60000UL;
+      Serial.printf("[MODUS] MANUEEL: %s aan op %u %% (%u min)\n", zone_code[z], b, override_min);
+    } else {
+      zone_manual[z] = false; pir_lit[z] = false;
+      backToAuto("zone manueel uit");
+    }
     req->send(200, "text/plain", "OK");
   });
   server.on("/reboot", HTTP_GET, [](AsyncWebServerRequest* req) {
@@ -593,7 +720,7 @@ void setup() {
   delay(300);
   bootDiagnose();
   loadSettings();
-  for (int z = 0; z < NUM_ZONES; z++) pinMode(PIR_PIN[z], INPUT);
+  for (int z = 0; z < NUM_ZONES; z++) pinMode(PIR_PIN[z], INPUT_PULLDOWN);   // v0.2: geen zwevende ingangen
   for (int d = 0; d < NUM_DOORS; d++) pinMode(DOOR_PIN[d], INPUT_PULLUP);   // + pull-up op het shield
   delay(5);
   for (int d = 0; d < NUM_DOORS; d++) door_open[d] = door_code[d][0] && doorReadOpen(d);   // begintoestand, telt niet als opening
@@ -608,6 +735,7 @@ void loop() {
   crumbL(CL_WIFI);  checkWiFi();
   if (ap_mode) dnsServer.processNextRequest();
   crumbL(CL_PIR);   readPIRs();
+  crumbL(CL_OUT);   updateZones();
   crumbL(CL_IDLE);
   if (restart_requested && (int32_t)(millis() - restart_at) >= 0) {
     for (int z = 0; z < NUM_ZONES; z++) setOutput(z, 0);

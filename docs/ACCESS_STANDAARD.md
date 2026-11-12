@@ -1,6 +1,6 @@
 # ACCESS-standaard (Zarlar buitenverlichting)
 
-*v0.5 — 12 nov 2026 — Filip Delannoy (FiDel). Status: **vastgelegd** (zones, `/json`-keys, gedrag). Wijzigen alleen met akkoord van FiDel. Sketch: **v0.1.1**, op het testbord.*
+*v0.5 — 12 nov 2026 — Filip Delannoy (FiDel). Status: **vastgelegd** (zones, `/json`-keys, gedrag). Wijzigen alleen met akkoord van FiDel. Sketch: **v0.2** (zones, AUTO/MANUEEL), op het testbord.*
 
 **Functie:** de ACCESS-controllers gebruiken dezelfde processor en hetzelfde shield als de room-controllers, maar bedienen de **buitenverlichting rondom het huis**: PIR-sensoren detecteren beweging, en modules met een PWM-ingang dimmen de lichten. De standaardlampen zijn **2 LED's van 9,5 V / 300 mA in serie**, gevoed met 24 V door de modules.
 
@@ -118,6 +118,8 @@ Per zone in `/settings`: zonecode · muur (W, S, N, E) · aan/uit · helderheid 
 3. **Terugval: berekende zonsopgang en zonsondergang** uit de datum en de ligging van Zarlardinge (instelbaar, met een marge in minuten). Gebruikt als de luxbron langer dan 10 minuten niet antwoordt. Zo blijft elke controller zelfstandig werken.
 
 De bron die in gebruik is, staat in de UI en in `/json`.
+
+**Tot v0.3** (sketch v0.2): geen luxbron. In `/settings` staat dag/nacht vast: standaard **altijd nacht**, zodat de PIR's al getest kunnen worden (`nt` = 1, `lb` = −1).
 
 **Let op:** de TSL2561 verzadigt boven ±40.000 lux (felle zon). Voor dag/nacht maakt dat niet uit; voor andere toepassingen wel.
 

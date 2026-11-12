@@ -1,6 +1,6 @@
 # Overdracht — ACCESS (buitenverlichting, ESP32C6_ACCESS)
 
-*Stand 12 november 2026, 18:00 — Filip Delannoy (FiDel), Zarlardinge (BE)*
+*Stand 12 november 2026, 18:45 — Filip Delannoy (FiDel), Zarlardinge (BE)*
 
 Dit document start een nieuw gesprek met Claude over de buitenverlichting: de Photon R8-ACCESS van vandaag en de ESP32-controllers ACCESS1–3 die nog ontworpen moeten worden. Alle details: [`README.md`](../README.md).
 
@@ -44,5 +44,6 @@ Afwijkingen van de Photon-sketch: zie §6.1 van de standaard.
 4. **Sketch v0.1.1 op het testbord** (12/11): `bin/ESP32_C6_ACCESS_v0.1.1.ino.bin`.
    - **Test 12/11 (v0.1):** PWM op 3,3 V zonder buffer werkt (0 V = 100 % aan, 3,3 V = uit, 1 kHz). Een AM312 op IO3 werkte niet (pull-up van de DS18B20-bus) → **nieuwe pinverdeling** (standaard §1.1, §6.2): PIR's op IO5, IO12, IO2, IO7; deurcontacten op IO3 en IO6.
    - v0.1.1: nieuwe pinnen, deurcontacten tonen (codes in `/settings`), statuspagina ververst om de 2 s, testschuifjes op de statuspagina.
-   - Te testen: PIR op RoomSense 2 (IO5) → zone D "beweging"; lamp via het schuifje van slot 1; eventueel een reed-contact op RoomSense 1. Daarna 48 u-test en plan + GO voor v0.2 (zones, AUTO/MANUEEL).
+   - Getest 12/11: PIR D op IO5 en de reed-ingangen werken. Niet-aangesloten PIR-ingangen zweefden (duizenden valse bewegingen) → opgelost in v0.2 (pull-down).
+5. **Sketch v0.2 (zones) klaar** (12/11): `bin/ESP32_C6_ACCESS_v0.2.ino.bin`. AUTO = beweging → licht op helderheid, uit na brandtijd; dag/nacht tot v0.3 vast (standaard altijd nacht). MANUEEL via `/set_zone?z=<zone>&v=1[&b=..]` of de knoppen op de statuspagina; `v=0` of na de override-tijd (30 min) → hele controller terug naar AUTO (beslist 12/11). Te testen: beweging voor PIR D → lamp aan, uit 30 s na de laatste beweging; Aan/Uit-knoppen; daarna 48 u-test en plan + GO voor v0.3 (lux, dag/nacht).
 5. PIReX-combinatie MOV-W1 + MOV-W3 + MOV-DN nakijken (W1 gaat naar ACCESS2).
