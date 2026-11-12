@@ -11,6 +11,15 @@
 // Updaten: OTA via http://<ip>/update met bin/ESP32_C6_ACCESS_vX.Y.ino.bin
 //
 // ── VERSIEHISTORIE ──────────────────────────────────────────
+// v0.1.1 (12nov26): PINVERDELING NA DE PIR-TEST (standaard §1.1 / §6.2). Een AM312 op IO3
+//   werkte niet: zijn uitgang kan de 4,7 kΩ pull-up van de DS18B20-bus op het shield niet laag
+//   trekken (rust 2,71 V). PIR's nu op pinnen zonder pull-up: slot 1 IO5, slot 2 IO12,
+//   slot 3 IO2, slot 4 IO7. PWM-pinnen ongewijzigd (IO19, IO18, IO10, IO1).
+//   Reed-contacten (deuren) op IO3 en IO6, die al een pull-up op het shield hebben: deurcode
+//   en "contact gesloten = deur dicht/open" per ingang in /settings, ontdenderd, alleen
+//   getoond (nog niet in /json; dat is v0.5).
+//   Statuspagina ververst vanzelf om de 2 s (/status_json, geen contract) en heeft nu de
+//   TEST-schuifjes (weg uit /settings).
 // v0.1 (11nov26): BASIS. WiFi (vast IP, geen modemslaap, herverbinden), AP-modus
 //   "ACCESS-<naam>" met captive portal als WiFi niet lukt, mDNS <naam>.local, OTA via
 //   /update, /settings (naam, WiFi, IP, PWM-frequentie, zonecode en polariteit per zoneslot),
@@ -38,13 +47,16 @@
 #error "ACCESS: zet in de Arduino IDE Tools -> USB CDC On Boot op Disabled (seriele monitor via de poort UART)"
 #endif
 
-#define ACCESS_VERSION "v0.1"   // enige plaats met het versienummer
+#define ACCESS_VERSION "v0.1.1"   // enige plaats met het versienummer
 
 // ── ZONESLOTS (ACCESS_STANDAARD §1.1) ───────────────────────
 //            slot:      1    2    3    4
-const uint8_t PIR_PIN[4] = { 3,   5,   2,  12 };   // RoomSense 1 · RoomSense 2 · Option 3 · RoomSense 4
+const uint8_t PIR_PIN[4] = { 5,  12,   2,   7 };   // RoomSense 2 · RoomSense 4 · Option 3 · RoomSense 5 (v0.1.1)
 const uint8_t PWM_PIN[4] = { 19, 18,  10,   1 };   // Option 5    · Option 4    · Option 2 · RoomSense 6
 #define NUM_ZONES   4
+// Deurcontacten (reed naar GND); beide pinnen hebben een pull-up op het shield (v0.1.1)
+#define NUM_DOORS   2
+const uint8_t DOOR_PIN[NUM_DOORS] = { 3, 6 };      // RoomSense 1 · RoomSense 3
 #define PWM_BITS    10                              // 0..1023
 #define PWM_FULL    (1 << PWM_BITS)              // 1024 = constant hoog (echt 100 %, geen tik laag)
 #define I2C_SDA     13                              // v0.3: TSL2561
@@ -63,6 +75,9 @@ bool active_low[NUM_ZONES] = { true, true, true, true };  // 0 V = licht aan (zo
 // Zonecode per slot (ACCESS_STANDAARD §1.1.1) = de enige naam van de zone overal.
 // Standaard die van ACCESS1: slot 1 D (voordeur), slot 2 W4 (veldkant), slot 3 S (terras), slot 4 vrij.
 char zone_code[NUM_ZONES][4] = { "D", "W4", "S", "" };
+// Deurcode per reed-ingang (standaard §4.1). Standaard die van ACCESS1: SD (schuifdeur), VD (voordeur).
+char door_code[NUM_DOORS][4] = { "SD", "VD" };
+bool door_closed_low[NUM_DOORS] = { true, true };   // contact gesloten (0 V) = deur dicht
 
 // ── TOESTAND ────────────────────────────────────────────────
 uint8_t  out_pct[NUM_ZONES]   = { 0, 0, 0, 0 };    // helderheid nu (0–100 %); v0.1: alleen TEST
@@ -70,6 +85,11 @@ bool     pir_now[NUM_ZONES]   = { false, false, false, false };
 bool     pir_seen[NUM_ZONES]  = { false, false, false, false };
 uint32_t pir_last[NUM_ZONES]  = { 0, 0, 0, 0 };
 uint32_t pir_count[NUM_ZONES] = { 0, 0, 0, 0 };    // aantal keer beweging sinds opstart
+bool     door_open[NUM_DOORS]  = { false, false };   // ontdenderde toestand
+uint8_t  door_raw_n[NUM_DOORS] = { 0, 0 };           // aantal opeenvolgende afwijkende lezingen
+bool     door_seen[NUM_DOORS]  = { false, false };
+uint32_t door_last[NUM_DOORS]  = { 0, 0 };           // laatste opening (millis)
+uint32_t door_count[NUM_DOORS] = { 0, 0 };           // aantal openingen sinds opstart
 bool ap_mode = false;
 bool mdns_ok = false;
 DNSServer dnsServer;
@@ -171,6 +191,12 @@ void loadSettings() {
     snprintf(k, sizeof(k), "zc%d", z + 1);
     if (prefs.isKey(k)) prefs.getString(k, zone_code[z], sizeof(zone_code[z]));
   }
+  for (int d = 0; d < NUM_DOORS; d++) {
+    char k[8]; snprintf(k, sizeof(k), "dc%d", d + 1);
+    if (prefs.isKey(k)) prefs.getString(k, door_code[d], sizeof(door_code[d]));
+    snprintf(k, sizeof(k), "dl%d", d + 1);
+    door_closed_low[d] = prefs.getBool(k, true);
+  }
   makeMdnsName();
 }
 
@@ -216,6 +242,8 @@ void checkWiFi() {                      // elke 10 s; herverbinden hoogstens om 
 }
 
 // ── PIR ─────────────────────────────────────────────────────
+void readDoors();                       // hieronder
+
 void readPIRs() {                       // elke 50 ms
   static uint32_t last = 0;
   if (millis() - last < 50) return;
@@ -225,6 +253,26 @@ void readPIRs() {                       // elke 50 ms
     if (v && !pir_now[z]) pir_count[z]++;
     if (v) { pir_seen[z] = true; pir_last[z] = millis(); }
     pir_now[z] = v;
+  }
+  readDoors();
+}
+
+// ── DEURCONTACTEN ───────────────────────────────────────────
+bool doorReadOpen(int d) {
+  bool low = digitalRead(DOOR_PIN[d]) == LOW;
+  return door_closed_low[d] ? !low : low;
+}
+
+void readDoors() {                      // samen met de PIR's, elke 50 ms; 2 gelijke lezingen = ontdenderd
+  for (int d = 0; d < NUM_DOORS; d++) {
+    if (!door_code[d][0]) { door_open[d] = false; continue; }
+    bool o = doorReadOpen(d);
+    if (o == door_open[d]) { door_raw_n[d] = 0; continue; }
+    if (++door_raw_n[d] < 2) continue;
+    door_raw_n[d] = 0;
+    door_open[d] = o;
+    if (o) { door_seen[d] = true; door_last[d] = millis(); door_count[d]++; }
+    Serial.printf("[DEUR] %s %s\n", door_code[d], o ? "open" : "dicht");
   }
 }
 
@@ -265,28 +313,64 @@ void pageFoot(AsyncResponseStream* p) {
   p->print(F("</div></body></html>"));
 }
 
-// ── WEB: status ("/") ───────────────────────────────────────
+// ── WEB: status ("/") — ververst zichzelf via /status_json ──
 void handleStatus(AsyncWebServerRequest* req) {
   crumbW(CW_HOME);
   AsyncResponseStream* p = req->beginResponseStream("text/html; charset=utf-8");
   pageHead(p, "ACCESS", "/");
-  p->print(F("<h3>Zones</h3><table><tr><th>Zone</th><th>PIR (pin)</th><th>Beweging</th><th>Licht (pin)</th><th>Helderheid</th></tr>"));
-  for (int z = 0; z < NUM_ZONES; z++) {
-    uint32_t ago = pir_seen[z] ? (millis() - pir_last[z]) / 1000 : 0;
-    p->printf("<tr><td>%d %s</td><td>IO%d: %s</td><td>", z + 1, zone_code[z][0] ? zone_code[z] : "<span class=\"dim\">(vrij)</span>", PIR_PIN[z],
-              pir_now[z] ? "<span class=\"ok\">beweging</span>" : "rust");
-    if (pir_seen[z]) p->printf("%lu s geleden &middot; %lu&times;", (unsigned long)ago, (unsigned long)pir_count[z]);
-    else p->print(F("<span class=\"dim\">nog niet</span>"));
-    p->printf("</td><td>IO%d</td><td>%d %%</td></tr>", PWM_PIN[z], out_pct[z]);
-  }
-  p->print(F("</table><p class=\"dim\">v0.1: alleen aansluitingen testen. Zones, AUTO/MANUEEL (v0.2) en dag/nacht met lux (v0.3) volgen.</p>"));
+  p->print(F("<h3>Zones</h3><table><tr><th>Slot</th><th>PIR</th><th>Beweging</th><th>Licht (TEST, niet bewaard)</th></tr>"));
+  for (int z = 0; z < NUM_ZONES; z++)
+    p->printf("<tr><td>%d <b>%s</b></td><td>IO%d: <span id=\"p%d\">&hellip;</span></td><td id=\"m%d\">&hellip;</td>"
+              "<td>IO%d <input type=\"range\" min=\"0\" max=\"100\" value=\"%d\" id=\"r%d\" style=\"width:45%%\" "
+              "oninput=\"document.getElementById('b%d').textContent=this.value+' %%'\" "
+              "onchange=\"fetch('/set_test?z=%d&b='+this.value)\"> <span id=\"b%d\">%d %%</span></td></tr>",
+              z + 1, zone_code[z][0] ? zone_code[z] : "(vrij)", PIR_PIN[z], z, z,
+              PWM_PIN[z], out_pct[z], z, z, z + 1, z, out_pct[z]);
+  p->print(F("</table><h3>Deuren</h3><table><tr><th>Ingang</th><th>Deur</th><th>Toestand</th><th>Laatst open</th></tr>"));
+  for (int d = 0; d < NUM_DOORS; d++)
+    p->printf("<tr><td>IO%d</td><td><b>%s</b></td><td id=\"d%d\">&hellip;</td><td id=\"e%d\">&hellip;</td></tr>",
+              DOOR_PIN[d], door_code[d][0] ? door_code[d] : "(vrij)", d, d);
+  p->print(F("</table><p class=\"dim\">v0.1.1: aansluitingen testen. De schuifjes zetten een uitgang tijdelijk (0 % = uit). "
+             "Zones, AUTO/MANUEEL (v0.2), dag/nacht met lux (v0.3) en deuren in /json (v0.5) volgen.</p>"));
   p->print(F("<h3>Netwerk</h3><table>"));
-  p->printf("<tr><td>IP</td><td>%s</td></tr><tr><td>Naam</td><td>%s</td></tr><tr><td>WiFi</td><td>%d dBm</td></tr>",
+  p->printf("<tr><td>IP</td><td>%s</td></tr><tr><td>Naam</td><td>%s</td></tr><tr><td>WiFi</td><td id=\"w\">%d dBm</td></tr>",
             ap_mode ? "192.168.4.1 (toegangspunt)" : WiFi.localIP().toString().c_str(),
             mdns_ok ? (String(mdns_name) + ".local").c_str() : "&mdash;", (int)WiFi.RSSI());
-  p->print(F("</table>"));
+  p->print(F("</table><script>"
+    "function ago(s){return s<0?'<span class=\"dim\">nog niet</span>':(s<120?s+' s':Math.round(s/60)+' min')+' geleden';}"
+    "function upd(){fetch('/status_json').then(r=>r.json()).then(d=>{"
+      "d.z.forEach((z,i)=>{"
+        "document.getElementById('p'+i).innerHTML=z.p?'<span class=\"ok\">beweging</span>':'rust';"
+        "document.getElementById('m'+i).innerHTML=ago(z.a)+(z.n?' &middot; '+z.n+'&times;':'');"
+        "var r=document.getElementById('r'+i);if(document.activeElement!==r){r.value=z.l;"
+          "document.getElementById('b'+i).textContent=z.l+' %';}"
+      "});"
+      "d.d.forEach((x,i)=>{"
+        "document.getElementById('d'+i).innerHTML=x.c?(x.o?'<span class=\"bad\">OPEN</span>':'<span class=\"ok\">dicht</span>'):'<span class=\"dim\">niet gebruikt</span>';"
+        "document.getElementById('e'+i).innerHTML=x.c?ago(x.a)+(x.n?' &middot; '+x.n+'&times;':''):'';"
+      "});"
+      "document.getElementById('w').textContent=d.w+' dBm';"
+    "}).catch(()=>{});}"
+    "upd();setInterval(upd,2000);</script>"));
   pageFoot(p);
   req->send(p);
+}
+
+// Gegevens voor de statuspagina (geen contract: kan wijzigen)
+void handleStatusJson(AsyncWebServerRequest* req) {
+  char b[520];
+  int n = snprintf(b, sizeof(b), "{\"z\":[");
+  for (int z = 0; z < NUM_ZONES; z++)
+    n += snprintf(b + n, sizeof(b) - n, "%s{\"p\":%d,\"a\":%ld,\"n\":%lu,\"l\":%d}", z ? "," : "",
+                  pir_now[z] ? 1 : 0, pir_seen[z] ? (long)((millis() - pir_last[z]) / 1000) : -1L,
+                  (unsigned long)pir_count[z], out_pct[z]);
+  n += snprintf(b + n, sizeof(b) - n, "],\"d\":[");
+  for (int d = 0; d < NUM_DOORS; d++)
+    n += snprintf(b + n, sizeof(b) - n, "%s{\"c\":%d,\"o\":%d,\"a\":%ld,\"n\":%lu}", d ? "," : "",
+                  door_code[d][0] ? 1 : 0, door_open[d] ? 1 : 0,
+                  door_seen[d] ? (long)((millis() - door_last[d]) / 1000) : -1L, (unsigned long)door_count[d]);
+  snprintf(b + n, sizeof(b) - n, "],\"w\":%d}", (int)WiFi.RSSI());
+  req->send(200, "application/json", b);
 }
 
 // ── WEB: /json (ACCESS_STANDAARD §3.1) ──────────────────────
@@ -328,18 +412,17 @@ void handleSettings(AsyncWebServerRequest* req) {
               z + 1, PIR_PIN[z], PWM_PIN[z], z + 1, zone_code[z],
               z + 1, active_low[z] ? " checked" : "", z + 1, active_low[z] ? "" : " checked");
   p->print(F("<tr><td colspan=\"2\" class=\"dim\">Zonecode = de naam van de zone overal (ACCESS1: D, W4, S; ACCESS2: W1, N1; ACCESS3: N2, E). Leeg = slot niet gebruikt.</td></tr>"));
+  p->print(F("</table><h3>Deuren (reed-contacten)</h3><table>"));
+  for (int d = 0; d < NUM_DOORS; d++)
+    p->printf("<tr><td>Ingang %d (IO%d)</td><td>deurcode <input type=\"text\" name=\"dc%d\" maxlength=\"3\" value=\"%s\" "
+              "style=\"width:4em\" placeholder=\"vrij\"> &middot; contact gesloten = deur "
+              "<label><input type=\"radio\" name=\"dl%d\" value=\"1\"%s> dicht</label> "
+              "<label><input type=\"radio\" name=\"dl%d\" value=\"0\"%s> open</label></td></tr>",
+              d + 1, DOOR_PIN[d], d + 1, door_code[d],
+              d + 1, door_closed_low[d] ? " checked" : "", d + 1, door_closed_low[d] ? "" : " checked");
+  p->print(F("<tr><td colspan=\"2\" class=\"dim\">ACCESS1: SD, VD · ACCESS3: AD, BD · ACCESS2: leeg.</td></tr>"));
   p->print(F("</table><button class=\"btn\" type=\"submit\">Opslaan</button>"
              "<span class=\"dim\"> Bij een andere naam, WiFi, IP of frequentie herstart de controller.</span></form>"));
-
-  // TEST: helderheid per zone, niet bewaard
-  p->print(F("<h3>Test uitgangen (niet bewaard)</h3><table>"));
-  for (int z = 0; z < NUM_ZONES; z++)
-    p->printf("<tr><td>Slot %d (IO%d)</td><td><input type=\"range\" min=\"0\" max=\"100\" value=\"%d\" style=\"width:70%%\" "
-              "oninput=\"document.getElementById('t%d').textContent=this.value+' %%'\" "
-              "onchange=\"fetch('/set_test?z=%d&b='+this.value)\"> <span id=\"t%d\">%d %%</span></td></tr>",
-              z + 1, PWM_PIN[z], out_pct[z], z, z + 1, z, out_pct[z]);
-  p->print(F("</table><p class=\"dim\">Om de LED-drivers op 3,3 V en de PWM-frequentie te testen: gaat het licht volledig uit bij 0 % "
-             "en volledig aan bij 100 %? Geflikker of gezoem? Na een herstart staat alles weer op 0 %.</p>"));
 
   // DIAGNOSE
   uint32_t up = millis() / 1000;
@@ -395,6 +478,21 @@ void handleSave(AsyncWebServerRequest* req) {
     c[j] = 0;
     if (strcmp(c, zone_code[z])) { strlcpy(zone_code[z], c, sizeof(zone_code[z])); prefs.putString(k, c); }
   }
+  for (int d = 0; d < NUM_DOORS; d++) {             // deurcode + betekenis van het contact
+    char k[8]; snprintf(k, sizeof(k), "dc%d", d + 1);
+    if (req->hasParam(k)) {
+      String v = req->getParam(k)->value(); v.trim(); v.toUpperCase();
+      char c[4] = ""; size_t j = 0;
+      for (size_t i = 0; i < v.length() && j < 3; i++) { char ch = v[i]; if ((ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9')) c[j++] = ch; }
+      c[j] = 0;
+      if (strcmp(c, door_code[d])) { strlcpy(door_code[d], c, sizeof(door_code[d])); prefs.putString(k, c); }
+    }
+    snprintf(k, sizeof(k), "dl%d", d + 1);
+    if (req->hasParam(k)) {
+      bool cl = req->getParam(k)->value() == "1";
+      if (cl != door_closed_low[d]) { door_closed_low[d] = cl; prefs.putBool(k, cl); }
+    }
+  }
   req->send(200, "text/html; charset=utf-8", restart
     ? "<meta http-equiv=\"refresh\" content=\"12;url=/settings\"><h3>Opgeslagen. De controller herstart&hellip;</h3>"
     : "<meta http-equiv=\"refresh\" content=\"1;url=/settings\"><h3>Opgeslagen.</h3>");
@@ -416,6 +514,7 @@ void handleUpdatePage(AsyncWebServerRequest* req) {
 void setupWeb() {
   server.on("/", HTTP_GET, handleStatus);
   server.on("/json", HTTP_GET, handleJson);
+  server.on("/status_json", HTTP_GET, handleStatusJson);
   server.on("/settings", HTTP_GET, handleSettings);
   server.on("/save_settings", HTTP_GET, handleSave);
   server.on("/update", HTTP_GET, handleUpdatePage);
@@ -495,6 +594,9 @@ void setup() {
   bootDiagnose();
   loadSettings();
   for (int z = 0; z < NUM_ZONES; z++) pinMode(PIR_PIN[z], INPUT);
+  for (int d = 0; d < NUM_DOORS; d++) pinMode(DOOR_PIN[d], INPUT_PULLUP);   // + pull-up op het shield
+  delay(5);
+  for (int d = 0; d < NUM_DOORS; d++) door_open[d] = door_code[d][0] && doorReadOpen(d);   // begintoestand, telt niet als opening
   outputsInit();
   Serial.printf("[CFG] %s · IP %s · PWM %u Hz\n", ctrl_name, static_ip, pwm_freq);
   startWiFi();

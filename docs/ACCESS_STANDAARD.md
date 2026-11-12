@@ -1,6 +1,6 @@
 # ACCESS-standaard (Zarlar buitenverlichting)
 
-*v0.4 — 11 nov 2026 — Filip Delannoy (FiDel). Status: **vastgelegd** (zones, `/json`-keys, gedrag). Wijzigen alleen met akkoord van FiDel. Sketch: **v0.1** (basis), voor het testbord.*
+*v0.5 — 12 nov 2026 — Filip Delannoy (FiDel). Status: **vastgelegd** (zones, `/json`-keys, gedrag). Wijzigen alleen met akkoord van FiDel. Sketch: **v0.1.1**, op het testbord.*
 
 **Functie:** de ACCESS-controllers gebruiken dezelfde processor en hetzelfde shield als de room-controllers, maar bedienen de **buitenverlichting rondom het huis**: PIR-sensoren detecteren beweging, en modules met een PWM-ingang dimmen de lichten. De standaardlampen zijn **2 LED's van 9,5 V / 300 mA in serie**, gevoed met 24 V door de modules.
 
@@ -24,12 +24,16 @@ Alle buitenverlichting van Zarlardinge draait op **dezelfde hardware en dezelfde
 
 Elke controller heeft dezelfde 4 zoneslots op vaste pinnen. Een controller gebruikt alleen de slots die hij nodig heeft. Zo is de hardware van ACCESS1, 2 en 3 identiek.
 
+**Beslist 12/11 (na de PIR-test, sketch v0.1.1):** PIR's alleen op pinnen **zonder** pull-up; de twee pinnen **met** pull-up op het shield (IO3, IO6) zijn voor de deurcontacten.
+
 | Slot | PIR-ingang | PWM-uitgang | ACCESS1 (vandaag op R8: PIR / PWM) |
 |---|---|---|---|
-| 1 | IO3 (Sense 1) | IO19 (Option 5) | **D** Voordeur (MOV-W1 / PWM-W1) |
-| 2 | IO5 (Sense 2) | IO18 (Option 4) | **W4** Veldkant (MOV-W2 / PWM-W2) |
+| 1 | IO5 (RoomSense 2) | IO19 (Option 5) | **D** Voordeur (MOV-W1 / PWM-W1) |
+| 2 | IO12 (RoomSense 4) | IO18 (Option 4) | **W4** Veldkant (MOV-W2 / PWM-W2) |
 | 3 | IO2 (Option 3) | IO10 (Option 2) | **S** Terras (MOV-S / PWM-S) |
-| 4 | IO12 (Sense 4) | IO1 (Sense 6) | vrij |
+| 4 | IO7 (RoomSense 5) | IO1 (RoomSense 6) | vrij |
+| Deur 1 | IO3 (RoomSense 1), pull-up 4,7 kΩ | — | `SD` schuifdeur |
+| Deur 2 | IO6 (RoomSense 3), pull-up | — | `VD` voordeur |
 
 ### 1.1.1 Zones en lampgroepen (beslist 8/11)
 
@@ -47,10 +51,11 @@ De lampgroepen zijn die van de plattegrond op FiDels tekening *ACCESS-WASPL bedr
 
 ACCESS2 en ACCESS3 staan in de B&B; W1 en N1 zitten in de hoek waar ACCESS2 komt. Windrichtingen in het Engels, zoals op de tekening: **W, S, N, E**.
 
-- PIR-ingangen: **1 kΩ in serie**, verder niets. IO3 heeft op het shield een 4,7 kΩ pull-up (T-BUS): daar zeker niet meer dan 1 kΩ.
-- ⚠️ **Test 12/11:** een **AM312 op IO3 werkt niet**: zijn uitgang kan de 4,7 kΩ pull-up niet laag trekken (gemeten rust 2,71 V, beweging 3,24 V) → altijd "beweging". Voorstel: PIR's alleen op pinnen **zonder** pull-up, en IO3/IO6 (met pull-up) gebruiken voor de reed-contacten. Zie §6.2.
+- PIR-ingangen: rechtstreeks (een AM312 op 3,3 V heeft geen serieweerstand nodig; 1 kΩ mag).
+- **Waarom (test 12/11):** een AM312 op IO3 werkte niet: zijn uitgang kan de 4,7 kΩ pull-up van de DS18B20-bus niet laag trekken (rust 2,71 V, beweging 3,24 V) → altijd "beweging". Op IO5 (geen pull-up): 3,0 V beweging, 0 V rust. ✅
+- Deurcontacten: reed tussen de pin en GND; de pull-up van het shield volstaat (de sketch zet ook de interne pull-up aan).
 - IO1 heeft op het shield een 10 kΩ pull-up naar 3V3: bij "0 V = aan" blijft dat licht uit tijdens het opstarten.
-- Vrij: IO4 (Option 6, eventueel statuspixel), IO6, IO7. **Niet** gebruikt voor iets anders zonder dit document aan te passen.
+- Vrij: IO4 (Option 6, eventueel statuspixel). **Niet** gebruikt voor iets anders zonder dit document aan te passen.
 
 ### 1.1.2 Aansluiten op de Optionix-plaatjes (11/11)
 
@@ -58,31 +63,31 @@ Elke connector krijgt een **Optionix-plaatje** met 8 soldeercontacten. Zelfde ve
 
 | Pin | **RoomSense** | **Option** |
 |---|---|---|
-| 1 | IO3 · **PIR slot 1** | +5 V |
-| 2 | IO5 · **PIR slot 2** | IO10 · **PWM slot 3** |
-| 3 | IO6 · vrij | IO2 · **PIR slot 3** |
-| 4 | IO12 · **PIR slot 4** | IO18 · **PWM slot 2** |
-| 5 | IO7 · vrij | IO19 · **PWM slot 1** |
+| 1 | IO3 · **deur 1** (reed) | +5 V |
+| 2 | IO5 · **PIR slot 1** | IO10 · **PWM slot 3** |
+| 3 | IO6 · **deur 2** (reed) | IO2 · **PIR slot 3** |
+| 4 | IO12 · **PIR slot 2** | IO18 · **PWM slot 2** |
+| 5 | IO7 · **PIR slot 4** | IO19 · **PWM slot 1** |
 | 6 | IO1 · **PWM slot 4** | IO4 · vrij (statuspixel) |
 | 7 | GND | GND |
 | 8 | sensorvoeding: **3,3 V** (vast op het ESP32-shield) | 3V3 |
 
-**Per controller** (labels voor de plaatjes; "gemeten" = zonder iets aangesloten, met sketch v0.1, 11/11):
+**Per controller** (labels voor de plaatjes, plaats van de controller, 12/11; "gemeten" = zonder iets aangesloten):
 
-| Pin | **ACCESS1** RoomSense | **ACCESS1** Option | **ACCESS2** RoomSense | **ACCESS2** Option | **ACCESS3** RoomSense | **ACCESS3** Option | Gemeten RS / Opt |
+| Pin | **ACCESS1** (BURO, aan de Ligne Roset) RS | Opt | **ACCESS2** (B&B, hoek boven de spiegel) RS | Opt | **ACCESS3** (B&B, boven de ingang) RS | Opt | Gemeten RS / Opt |
 |---|---|---|---|---|---|---|---|
-| 1 | IO3 · PIR **D** | +5 V | IO3 · PIR **W1** | +5 V | IO3 · PIR **N2** | +5 V | 3,3 / 5 V ⚠️ |
-| 2 | IO5 · PIR **W4** | IO10 · PWM **S** | IO5 · PIR **N1** | IO10 · vrij | IO5 · PIR **E** | IO10 · vrij | 0 / 3,3 |
-| 3 | IO6 · vrij | IO2 · PIR **S** | IO6 · vrij | IO2 · vrij | IO6 · vrij | IO2 · vrij | 3,3 / 0 |
-| 4 | IO12 · vrij | IO18 · PWM **W4** | IO12 · vrij | IO18 · PWM **N1** | IO12 · vrij | IO18 · PWM **E** | 0 / 3,3 |
-| 5 | IO7 · vrij | IO19 · PWM **D** | IO7 · vrij | IO19 · PWM **W1** | IO7 · vrij | IO19 · PWM **N2** | 0 / 3,3 |
+| 1 | IO3 · reed **SD** | +5 V | IO3 · vrij (reed) | +5 V | IO3 · reed **AD** | +5 V | 3,3 / 5 V ⚠️ |
+| 2 | IO5 · PIR **D** | IO10 · PWM **S** | IO5 · PIR **W1** | IO10 · vrij | IO5 · PIR **N2** | IO10 · vrij | 0 / 3,3 |
+| 3 | IO6 · reed **VD** | IO2 · PIR **S** | IO6 · vrij (reed) | IO2 · vrij | IO6 · reed **BD** | IO2 · vrij | 3,3 / 0 |
+| 4 | IO12 · PIR **W4** | IO18 · PWM **W4** | IO12 · PIR **N1** | IO18 · PWM **N1** | IO12 · PIR **E** | IO18 · PWM **E** | 0 / 3,3 |
+| 5 | IO7 · vrij (PIR slot 4) | IO19 · PWM **D** | IO7 · vrij (PIR slot 4) | IO19 · PWM **W1** | IO7 · vrij (PIR slot 4) | IO19 · PWM **N2** | 0 / 3,3 |
 | 6 | IO1 · vrij | IO4 · vrij | IO1 · vrij | IO4 · vrij | IO1 · vrij | IO4 · vrij | 3,3 / 0 |
 | 7 | GND | GND | GND | GND | GND | GND | — |
 | 8 | sensorvoeding 3,3 V | 3V3 | sensorvoeding 3,3 V | 3V3 | sensorvoeding 3,3 V | 3V3 | 3,3 / 3,3 |
 
 Zonecodes in `/settings`: ACCESS1 slot 1 `D`, 2 `W4`, 3 `S` · ACCESS2 slot 1 `W1`, 2 `N1` · ACCESS3 slot 1 `N2`, 2 `E` (beslist 11/11). De oude R8-klemmen MOV-E, PWM-E, MOV-N1 en PWM-N1 worden op ACCESS1 **niet** aangesloten.
 
-- Gemeten 3,3 V op IO3 = pull-up 4,7 kΩ (T-BUS) op het shield; op IO6 = pull-up van de DHT-lijn; op IO1 = PWM uit + pull-up 10 kΩ; op de andere PWM-pinnen = uitgang uit (actief laag).
+- Gemeten 3,3 V op IO3 = pull-up 4,7 kΩ (T-BUS) op het shield; op IO6 = pull-up van de DHT-lijn (beide ideaal voor de reed-contacten); op IO1 = PWM uit + pull-up 10 kΩ; op de andere PWM-pinnen = uitgang uit (actief laag).
 - ⚠️ **Option 1 mat 0 V** op het testbord (11/11): daar hoort +5 V. Nakijken in het ontwerp van het shield vóór er PIR's of 5 V-sensoren aan komen.
 
 **Testbord:** de LED-driver op **slot 1**: stuuringang op **Option 5 (IO19)**, massa op **Option 7 (GND)**; een PIR op **RoomSense 1 (IO3)**, voeding RoomSense 8, massa RoomSense 7, 1 kΩ in serie op de signaalader.
@@ -157,14 +162,15 @@ Alleen om te testen, **geen contract**: `/set_test?z=1..4&b=0..100` zet een zone
 
 | Controller | Deur | Code (voorstel) | Pin (voorstel) |
 |---|---|---|---|
-| ACCESS1 (slaapkamer, boven de voordeur in de hal) | Schuifdeur | `SD` | RoomSense 3 · IO6 |
-| ACCESS1 | Voordeur | `VD` | RoomSense 5 · IO7 |
-| ACCESS3 (B&B, oostkant) | Achterdeur | `AD` | RoomSense 3 · IO6 |
-| ACCESS3 | Bovendeur | `BD` | RoomSense 5 · IO7 |
+| ACCESS1 (BURO, aan de Ligne Roset) | Schuifdeur | `SD` | RoomSense 1 · IO3 |
+| ACCESS1 | Voordeur | `VD` | RoomSense 3 · IO6 |
+| ACCESS3 (B&B, boven de ingang) | Achterdeur | `AD` | RoomSense 1 · IO3 |
+| ACCESS3 | Bovendeur | `BD` | RoomSense 3 · IO6 |
 
 Voorstel, nog te bevestigen:
-- **Aansluiting:** reed-contact tussen de pin en **GND**. IO6 heeft op het shield al een pull-up (de DHT-lijn, gemeten 3,3 V). Op IO7 een **pull-up van 10 kΩ naar 3V3** op het Optionix-plaatje (de interne pull-up van ±45 kΩ is te zwak voor lange kabels buiten). Eventueel 100 nF naar GND als filter.
-- **Zo staan de pinnen overal gelijk:** IO6 en IO7 zijn op elke ACCESS vrij. ACCESS2 gebruikt ze (nog) niet.
+- **Aansluiting:** reed-contact tussen de pin en **GND**. IO3 en IO6 hebben op het shield al een pull-up (gemeten 3,3 V): **geen extra weerstand nodig** (12/11). Eventueel 100 nF naar GND als filter.
+- **Zo staan de pinnen overal gelijk.** ACCESS2 gebruikt ze (nog) niet.
+- **Sinds sketch v0.1.1:** deurcode en betekenis van het contact in `/settings`, toestand op de statuspagina (nog niet in `/json`).
 - **Software:** per ingang in `/settings` een deurcode (leeg = niet gebruikt) en "contact gesloten = deur dicht" of omgekeerd. Ontdenderen (±50 ms). Telling en tijdstip van de laatste opening, zichtbaar op `/` en in Diagnose.
 - **`/json`:** per deur `c<code>` in kleine letters, 1 = **open**, 0 = dicht: `csd`, `cvd` (ACCESS1) · `cad`, `cbd` (ACCESS3). Achteraan toegevoegd, zoals afgesproken voor nieuwe keys.
 - **Wanneer:** als v0.5, na het plaatsen van ACCESS1 (v0.4), of eerder als FiDel dat wil.
@@ -206,14 +212,15 @@ Telkens één versie, na GO, met versiekop, changelog en een 48 u-test.
 
 **Nog na te kijken op de tekening:** de nieuwe PIR's MOV-W1, MOV-W3 en MOV-DN gaan via het PIReX-printje samen naar één ingang. Met de nieuwe zones horen W3 en DN bij `D` (ACCESS1) en W1 bij ACCESS2.
 
-## 6.2 Te bevestigen
+## 6.2 Pinverdeling na de PIR-test (beslist 12/11)
 
-- **Pinverdeling na de PIR-test (12/11), voorstel:** PIR slot 1 → **IO5** (RS 2), slot 2 → **IO12** (RS 4), slot 3 → IO2 (Opt 3, ongewijzigd), slot 4 → **IO7** (RS 5). Reed-contacten op **IO3** (RS 1) en **IO6** (RS 3): die hebben al een pull-up op het shield, dus geen extra weerstand nodig. PWM-pinnen ongewijzigd. Te bevestigen door FiDel.
+PIR slot 1 → IO5, slot 2 → IO12, slot 3 → IO2, slot 4 → IO7; deurcontacten op IO3 en IO6 (pull-up op het shield); PWM ongewijzigd. Zie §1.1 en §1.1.2. Sketch v0.1.1.
 
 ## 7. Historiek
 
 | Versie | Datum | Wat |
 |---|---|---|
+| v0.5 | 12 nov 2026 | Test 12/11: PWM op 3,3 V zonder buffer werkt; AM312 op IO3 niet (pull-up) → nieuwe pinverdeling (PIR IO5, IO12, IO2, IO7; deuren IO3, IO6); plaatsen van ACCESS1–3; sketch v0.1.1 |
 | v0.4 | 11 nov 2026 | Functiebeschrijving, standaardlampen 9,5 V / 300 mA. Sloten blijven op aparte controllers; 4 deurcontacten gepland (ACCESS1: schuifdeur, voordeur; ACCESS3: achterdeur, bovendeur), voorstel pinnen en keys (§4.1). Aansluitingen op de Optionix-plaatjes per controller (zonecodes per slot voor ACCESS1–3), RoomSense 8 vast 3,3 V, testbord (§1.1.2), `lb` −1 en testadres `/set_test`; sketch v0.1 |
 | v0.3 | 8 nov 2026 | Zones per controller en zonecodes (S, W4, D · W1, N1 · N2, E), `/json`-keys vastgelegd, één modus per controller met override-tijd, afwijkingen R8 |
 | v0.2 | 7 nov 2026 | Open vragen beantwoord: N1 blijft bij ACCESS1, testbord met één driver + LED, PWM start op 1 kHz |
