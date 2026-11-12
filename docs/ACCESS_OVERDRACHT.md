@@ -1,6 +1,6 @@
 # Overdracht — ACCESS (buitenverlichting, ESP32C6_ACCESS)
 
-*Stand 12 november 2026, 19:45 — Filip Delannoy (FiDel), Zarlardinge (BE)*
+*Stand 12 november 2026, 20:00 — Filip Delannoy (FiDel), Zarlardinge (BE)*
 
 Dit document start een nieuw gesprek met Claude over de buitenverlichting: de Photon R8-ACCESS van vandaag en de ESP32-controllers ACCESS1–3 die nog ontworpen moeten worden. Alle details: [`README.md`](../README.md).
 
@@ -47,3 +47,9 @@ Afwijkingen van de Photon-sketch: zie §6.1 van de standaard.
    - Getest 12/11: PIR D op IO5 en de reed-ingangen werken. Niet-aangesloten PIR-ingangen zweefden (duizenden valse bewegingen) → opgelost in v0.2 (pull-down).
 5. **Sketch v0.2.2** (12/11): `bin/ESP32_C6_ACCESS_v0.2.2.ino.bin`. Nieuw t.o.v. v0.2.1: `m<zone>` = triggers per minuut (zoals ROOM, beslist 12/11). Daarvoor v0.2.1: v0.2 had een interne pull-down op de PIR's: de AM312 haalde dan maar 1,63 V → in v0.2.1 weer zonder; hardware 470 kΩ–1 MΩ pull-down per PIR-lijn (standaard §1.1). Pagina's tonen de plaats op de plaatjes ("Sense 2 · IO5", "Option 5 · IO19"). AUTO = beweging → licht op helderheid, uit na brandtijd; dag/nacht tot v0.3 vast (standaard altijd nacht). MANUEEL via `/set_zone?z=<zone>&v=1[&b=..]` of de knoppen op de statuspagina; `v=0` of na de override-tijd (30 min) → hele controller terug naar AUTO (beslist 12/11). Te testen: beweging voor PIR D → lamp aan, uit 30 s na de laatste beweging; Aan/Uit-knoppen; daarna 48 u-test en plan + GO voor v0.3 (lux, dag/nacht).
 5. PIReX-combinatie MOV-W1 + MOV-W3 + MOV-DN nakijken (W1 gaat naar ACCESS2).
+
+6. **Gepland (voorstel 12/11, nog geen GO):**
+   - **v0.2.3 dimmen** zoals ROOM (sinuscurve), voorstel: dimtijd aan 1 s / uit 3 s, gammacurve ±2,2. Open: één of twee dimtijden, gamma ja/nee.
+   - **v0.2.4 landingspagina** (`landing.h`, zoals ROOM; huidige statuspagina → `/advanced`): modusknop, dag/nacht, vereenvoudigd grondplan (FiDels tekening, met het afdak boven de voordeur aan de westkant) met alle 7 zones en 4 deuren, vast per zonecode in de pagina; elke controller kleurt en bedient alleen zijn eigen zones/deuren, de rest grijs. Tegels per zone (tik = aan/uit, schuifje = dimmen).
+   - **Plaats van de deuren op het plan (FiDel 12/11):** VD onder het afdak · SD aan de tuinzijde (S), links · AD aan de oostkant op de plaats van de trap (bovenaan, bij E1) · BD binnen de huisomtrek, links van AD.
+   - Open: omschrijving per zone (D voordeur, W4 veldkant, S terras, W1 ?, N1 ?, N2 ?, E ?).
