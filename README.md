@@ -2,7 +2,7 @@
 
 *Filip Delannoy (FiDel) — aangemaakt 6 november 2026*
 
-> **Status:** sketch **v0.2.1** (12/11/2026, zones en AUTO/MANUEEL) op het testbord: `bin/ESP32_C6_ACCESS_v0.2.1.ino.bin`, gecompileerd door Claude (ESP32-core 3.3.12, nieuwste bibliotheken). De ESP32-controllers ACCESS1–3 zijn nog niet geplaatst. Vandaag bedient de **Photon R8-ACCESS** de buitenlichten zuid en west. Zijn laatste sketch staat in [`old/R8-ACCESS.ino`](old/R8-ACCESS.ino).
+> **Status:** sketch **v0.2.2** (12/11/2026, zones, AUTO/MANUEEL, beweging per minuut) op het testbord: `bin/ESP32_C6_ACCESS_v0.2.2.ino.bin`, gecompileerd door Claude (ESP32-core 3.3.12, nieuwste bibliotheken). De ESP32-controllers ACCESS1–3 zijn nog niet geplaatst. Vandaag bedient de **Photon R8-ACCESS** de buitenlichten zuid en west. Zijn laatste sketch staat in [`old/R8-ACCESS.ino`](old/R8-ACCESS.ino).
 
 **Functie:** de ACCESS-controllers gebruiken dezelfde processor en hetzelfde shield als de room-controllers, maar bedienen de **buitenverlichting rondom het huis**: PIR-sensoren detecteren beweging, en modules met een PWM-ingang dimmen de lichten. De standaardlampen zijn **2 LED's van 9,5 V / 300 mA in serie**, gevoed met 24 V door de modules.
 

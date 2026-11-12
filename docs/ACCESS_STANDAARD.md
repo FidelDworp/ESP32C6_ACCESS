@@ -1,6 +1,6 @@
 # ACCESS-standaard (Zarlar buitenverlichting)
 
-*v0.5 — 12 nov 2026 — Filip Delannoy (FiDel). Status: **vastgelegd** (zones, `/json`-keys, gedrag). Wijzigen alleen met akkoord van FiDel. Sketch: **v0.2.1** (zones, AUTO/MANUEEL), op het testbord.*
+*v0.6 — 12 nov 2026 — Filip Delannoy (FiDel). Status: **vastgelegd** (zones, `/json`-keys, gedrag). Wijzigen alleen met akkoord van FiDel. Sketch: **v0.2.2** (zones, AUTO/MANUEEL, beweging per minuut), op het testbord.*
 
 **Functie:** de ACCESS-controllers gebruiken dezelfde processor en hetzelfde shield als de room-controllers, maar bedienen de **buitenverlichting rondom het huis**: PIR-sensoren detecteren beweging, en modules met een PWM-ingang dimmen de lichten. De standaardlampen zijn **2 LED's van 9,5 V / 300 mA in serie**, gevoed met 24 V door de modules.
 
@@ -140,7 +140,7 @@ Per zone: **`m` + zonecode** en **`l` + zonecode**, in kleine letters.
 | Key | Betekenis |
 |---|---|
 | `a` | uptime (s) |
-| `m<zone>` | beweging in de laatste 10 min (1/0): `ms`, `mw4`, `md` (ACCESS1) · `mw1`, `mn1` (ACCESS2) · `mn2`, `me` (ACCESS3) |
+| `m<zone>` | **beweging: aantal PIR-triggers per minuut** (glijdend venster, standaard 60 s, instelbaar), zoals `w`/`x` in ROOM; 0 = rust (beslist 12/11, was "laatste 10 min, 1/0"): `ms`, `mw4`, `md` (ACCESS1) · `mw1`, `mn1` (ACCESS2) · `mn2`, `me` (ACCESS3) |
 | `l<zone>` | licht nu, helderheid 0–100 %: `ls`, `lw4`, `ld` · `lw1`, `ln1` · `ln2`, `le` |
 | `au` | modus van de controller: 1 = AUTO, 0 = MANUEEL |
 | `lux` | lux (−1 = geen bron) |
@@ -148,7 +148,7 @@ Per zone: **`m` + zonecode** en **`l` + zonecode**, in kleine letters.
 | `lb` | bron dag/nacht: 0 = eigen sensor, 1 = andere ACCESS, 2 = berekend, −1 = nog geen bron (v0.1–v0.2) |
 | `ac`, `ad`, `ae`, `af` | RSSI, heap %, grootste blok, laagste heap (zoals ROOM) |
 
-Voorbeeld ACCESS1: `{"a":3600,"ms":0,"ls":0,"mw4":0,"lw4":0,"md":1,"ld":80,"au":1,"lux":2,"nt":1,"lb":0,…}`
+Voorbeeld ACCESS1: `{"a":3600,"ms":0,"ls":0,"mw4":0,"lw4":0,"md":3,"ld":80,"au":1,"lux":2,"nt":1,"lb":0,…}`
 
 Bediening: `/set_zone?z=<zone>&v=1` (manueel aan, controller naar MANUEEL), `v=0` (uit, terug naar AUTO), optioneel `&b=0..100` (helderheid). Bv. `/set_zone?z=D&v=1&b=60`.
 
@@ -216,6 +216,10 @@ Telkens één versie, na GO, met versiekop, changelog en een 48 u-test.
 
 **Nog na te kijken op de tekening:** de nieuwe PIR's MOV-W1, MOV-W3 en MOV-DN gaan via het PIReX-printje samen naar één ingang. Met de nieuwe zones horen W3 en DN bij `D` (ACCESS1) en W1 bij ACCESS2.
 
+## 6.3 Beweging per minuut (beslist 12/11)
+
+`m<zone>` telt de PIR-triggers per minuut (glijdend venster), zoals ROOM: meteen bruikbaar in het logblad. Sketch v0.2.2.
+
 ## 6.2 Pinverdeling na de PIR-test (beslist 12/11)
 
 PIR slot 1 → IO5, slot 2 → IO12, slot 3 → IO2, slot 4 → IO7; deurcontacten op IO3 en IO6 (pull-up op het shield); PWM ongewijzigd. Zie §1.1 en §1.1.2. Sketch v0.1.1.
@@ -224,6 +228,7 @@ PIR slot 1 → IO5, slot 2 → IO12, slot 3 → IO2, slot 4 → IO7; deurcontact
 
 | Versie | Datum | Wat |
 |---|---|---|
+| v0.6 | 12 nov 2026 | `m<zone>` = triggers per minuut (zoals ROOM); PIR-lijnen zonder interne pull-down, 470 kΩ–1 MΩ extern; sketch v0.2.2 |
 | v0.5 | 12 nov 2026 | Test 12/11: PWM op 3,3 V zonder buffer werkt; AM312 op IO3 niet (pull-up) → nieuwe pinverdeling (PIR IO5, IO12, IO2, IO7; deuren IO3, IO6); plaatsen van ACCESS1–3; sketch v0.1.1 |
 | v0.4 | 11 nov 2026 | Functiebeschrijving, standaardlampen 9,5 V / 300 mA. Sloten blijven op aparte controllers; 4 deurcontacten gepland (ACCESS1: schuifdeur, voordeur; ACCESS3: achterdeur, bovendeur), voorstel pinnen en keys (§4.1). Aansluitingen op de Optionix-plaatjes per controller (zonecodes per slot voor ACCESS1–3), RoomSense 8 vast 3,3 V, testbord (§1.1.2), `lb` −1 en testadres `/set_test`; sketch v0.1 |
 | v0.3 | 8 nov 2026 | Zones per controller en zonecodes (S, W4, D · W1, N1 · N2, E), `/json`-keys vastgelegd, één modus per controller met override-tijd, afwijkingen R8 |

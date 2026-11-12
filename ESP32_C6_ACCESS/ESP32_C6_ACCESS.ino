@@ -11,6 +11,10 @@
 // Updaten: OTA via http://<ip>/update met bin/ESP32_C6_ACCESS_vX.Y.ino.bin
 //
 // ── VERSIEHISTORIE ──────────────────────────────────────────
+// v0.2.2 (12nov26): BEWEGING PER MINUUT, zoals ROOM (w/x): per zone een buffer van 20
+//   tijdstempels; m<zone> in /json = aantal triggers in het glijdende venster (standaard 60 s,
+//   instelbaar 10–600 s in /settings) i.p.v. "beweging laatste 10 min (1/0)" (beslist 12/11).
+//   Statuspagina: bolletje (rood > 0), "N/min" en laatste beweging; geen teller sinds opstart.
 // v0.2.1 (12nov26): PIR-ingangen weer ZONDER interne pull-down: de AM312 heeft een zwakke
 //   uitgang (±tientallen kΩ) en haalde met de ±45 kΩ pull-down maar 1,63 V (< drempel, altijd
 //   "rust"). Zweven vermijden: zones zonder PIR op "uit" zetten (worden niet gelezen) en in de
@@ -68,7 +72,7 @@
 #error "ACCESS: zet in de Arduino IDE Tools -> USB CDC On Boot op Disabled (seriele monitor via de poort UART)"
 #endif
 
-#define ACCESS_VERSION "v0.2.1"   // enige plaats met het versienummer
+#define ACCESS_VERSION "v0.2.2"   // enige plaats met het versienummer
 
 // ── ZONESLOTS (ACCESS_STANDAARD §1.1) ───────────────────────
 //            slot:      1    2    3    4
@@ -86,7 +90,7 @@ const char* const DOOR_LOC[NUM_DOORS] = { "Sense 1", "Sense 3" };
 #define PWM_FULL    (1 << PWM_BITS)              // 1024 = constant hoog (echt 100 %, geen tik laag)
 #define I2C_SDA     13                              // v0.3: TSL2561
 #define I2C_SCL     11
-#define MOTION_RECENT_MS 600000UL                   // "beweging in de laatste 10 min" (z1m…)
+#define MOV_BUF_SIZE 20                             // v0.2.2: tijdstempels per zone (zoals ROOM)
 
 // ── INSTELLINGEN (NVS "access-cfg") ─────────────────────────
 Preferences prefs;
@@ -108,6 +112,7 @@ bool     zone_en[NUM_ZONES]     = { true, true, true, true };   // zone aan/uit
 uint8_t  zone_bright[NUM_ZONES] = { 100, 100, 100, 100 };       // helderheid in AUTO (%)
 uint16_t zone_burn_s[NUM_ZONES] = { 30, 30, 30, 30 };           // brandtijd na de laatste beweging (s)
 uint16_t override_min = 30;                                     // MANUEEL → terug naar AUTO na … min
+uint16_t mov_window_s = 60;                                     // v0.2.2: venster voor m<zone> (s)
 bool     force_night  = true;                                   // tot v0.3: dag/nacht vast (true = altijd nacht)
 
 // ── TOESTAND ────────────────────────────────────────────────
@@ -115,7 +120,8 @@ uint8_t  out_pct[NUM_ZONES]   = { 0, 0, 0, 0 };    // helderheid nu (0–100 %);
 bool     pir_now[NUM_ZONES]   = { false, false, false, false };
 bool     pir_seen[NUM_ZONES]  = { false, false, false, false };
 uint32_t pir_last[NUM_ZONES]  = { 0, 0, 0, 0 };
-uint32_t pir_count[NUM_ZONES] = { 0, 0, 0, 0 };    // aantal keer beweging sinds opstart
+uint32_t mov_times[NUM_ZONES][MOV_BUF_SIZE] = {};  // v0.2.2: tijdstempels van triggers (0 = leeg)
+uint8_t  mov_trig[NUM_ZONES]  = { 0, 0, 0, 0 };    // triggers in het venster (m<zone>)
 bool     door_open[NUM_DOORS]  = { false, false };   // ontdenderde toestand
 // v0.2: modus en zonetoestand
 bool     auto_mode = true;                           // au: true = AUTO, false = MANUEEL
@@ -234,6 +240,7 @@ void loadSettings() {
     snprintf(k, sizeof(k), "zt%d", z + 1); zone_burn_s[z] = constrain(prefs.getUShort(k, 30), 5, 3600);
   }
   override_min = constrain(prefs.getUShort("ov_min", 30), 1, 240);
+  mov_window_s = constrain(prefs.getUShort("mov_win", 60), 10, 600);
   force_night  = prefs.getBool("nf", true);
   for (int d = 0; d < NUM_DOORS; d++) {
     char k[8]; snprintf(k, sizeof(k), "dc%d", d + 1);
@@ -287,6 +294,23 @@ void checkWiFi() {                      // elke 10 s; herverbinden hoogstens om 
 
 // ── PIR ─────────────────────────────────────────────────────
 void readDoors();                       // hieronder
+
+// v0.2.2: triggers per venster, zoals pushEvent()/countRecent() in ROOM
+void pushTrigger(int z) {
+  uint32_t now = millis(), win = (uint32_t)mov_window_s * 1000UL;
+  int oldest = 0;
+  for (int i = 0; i < MOV_BUF_SIZE; i++) {
+    if (mov_times[z][i] == 0 || now - mov_times[z][i] > win) { mov_times[z][i] = now ? now : 1; return; }
+    if (mov_times[z][i] < mov_times[z][oldest]) oldest = i;
+  }
+  mov_times[z][oldest] = now ? now : 1;     // buffer vol: oudste overschrijven
+}
+
+uint8_t countTriggers(int z) {
+  uint32_t now = millis(), win = (uint32_t)mov_window_s * 1000UL; uint8_t c = 0;
+  for (int i = 0; i < MOV_BUF_SIZE; i++) if (mov_times[z][i] && now - mov_times[z][i] <= win) c++;
+  return c;
+}
 bool zoneUsed(int z) { return zone_code[z][0] && zone_en[z]; }
 
 void readPIRs() {                       // elke 50 ms
@@ -295,11 +319,16 @@ void readPIRs() {                       // elke 50 ms
   last = millis();
   for (int z = 0; z < NUM_ZONES; z++) {
     bool v = zoneUsed(z) && digitalRead(PIR_PIN[z]) == HIGH;   // v0.2: alleen gebruikte zones
-    if (v && !pir_now[z]) pir_count[z]++;
+    if (v && !pir_now[z]) { pushTrigger(z); mov_trig[z] = countTriggers(z); }   // v0.2.2
     if (v) { pir_seen[z] = true; pir_last[z] = millis(); }
     pir_now[z] = v;
   }
   readDoors();
+  static uint32_t last_cnt = 0;           // v0.2.2: minstens om de seconde herberekenen (laten zakken)
+  if (millis() - last_cnt >= 1000) {
+    last_cnt = millis();
+    for (int z = 0; z < NUM_ZONES; z++) mov_trig[z] = zoneUsed(z) ? countTriggers(z) : 0;
+  }
 }
 
 // ── DEURCONTACTEN ───────────────────────────────────────────
@@ -321,9 +350,7 @@ void readDoors() {                      // samen met de PIR's, elke 50 ms; 2 gel
   }
 }
 
-int motionRecent(int z) {
-  return (pir_seen[z] && millis() - pir_last[z] < MOTION_RECENT_MS) ? 1 : 0;
-}
+int motionRecent(int z) { return mov_trig[z]; }   // v0.2.2: triggers in het venster (m<zone>)
 
 // ── ZONES (v0.2, standaard §2.1) ────────────────────────────
 bool isNight() { return force_night; }      // v0.3: lux, andere ACCESS of berekende zon
@@ -437,7 +464,7 @@ void handleStatus(AsyncWebServerRequest* req) {
       "document.getElementById('nt').textContent=(d.nt?'nacht':'dag')+' (vast, tot v0.3)';"
       "d.z.forEach((z,i)=>{if(!document.getElementById('p'+i))return;"
         "document.getElementById('p'+i).innerHTML=z.p?'<span class=\"ok\">beweging</span>':'rust';"
-        "document.getElementById('m'+i).innerHTML=ago(z.a)+(z.n?' &middot; '+z.n+'&times;':'');"
+        "document.getElementById('m'+i).innerHTML='<span style=\"display:inline-block;width:10px;height:10px;border-radius:5px;background:'+(z.n?'#c00':'#bbb')+'\"></span> <b>'+z.n+'/min</b> &middot; laatste '+ago(z.a);"
         "document.getElementById('b'+i).innerHTML=z.l+' %'+(z.m?' <span class=\"bad\">manueel</span>':(z.k?' <span class=\"ok\">PIR</span>':''))+(z.t?' <span class=\"bad\">TEST</span>':'');"
       "});"
       "d.d.forEach((x,i)=>{"
@@ -458,7 +485,7 @@ void handleStatusJson(AsyncWebServerRequest* req) {
   for (int z = 0; z < NUM_ZONES; z++)
     n += snprintf(b + n, sizeof(b) - n, "%s{\"p\":%d,\"a\":%ld,\"n\":%lu,\"l\":%d,\"m\":%d,\"k\":%d,\"t\":%d}", z ? "," : "",
                   pir_now[z] ? 1 : 0, pir_seen[z] ? (long)((millis() - pir_last[z]) / 1000) : -1L,
-                  (unsigned long)pir_count[z], out_pct[z], zone_manual[z] ? 1 : 0, pir_lit[z] ? 1 : 0,
+                  (unsigned long)mov_trig[z], out_pct[z], zone_manual[z] ? 1 : 0, pir_lit[z] ? 1 : 0,
                   test_pct[z] >= 0 ? 1 : 0);
   n += snprintf(b + n, sizeof(b) - n, "],\"d\":[");
   for (int d = 0; d < NUM_DOORS; d++)
@@ -515,6 +542,7 @@ void handleSettings(AsyncWebServerRequest* req) {
               z + 1, zone_en[z] ? " selected" : "", zone_en[z] ? "" : " selected",
               z + 1, zone_bright[z], z + 1, zone_burn_s[z]);
   p->print(F("<tr><td colspan=\"2\" class=\"dim\">Zonecode = de naam van de zone overal (ACCESS1: D, W4, S; ACCESS2: W1, N1; ACCESS3: N2, E). Leeg = slot niet gebruikt.</td></tr>"));
+  p->printf("<tr><td>Venster beweging (m&lt;zone&gt; = triggers in dit venster)</td><td><input type=\"number\" name=\"mw\" min=\"10\" max=\"600\" value=\"%u\" style=\"width:5em\"> s</td></tr>", mov_window_s);
   p->printf("<tr><td>Override-tijd (MANUEEL → AUTO)</td><td><input type=\"number\" name=\"ov\" min=\"1\" max=\"240\" value=\"%u\" style=\"width:5em\"> min</td></tr>", override_min);
   p->printf("<tr><td>Dag/nacht (tot v0.3, lux)</td><td><select name=\"nf\"><option value=\"1\"%s>altijd nacht (PIR's werken)</option>"
             "<option value=\"0\"%s>altijd dag (AUTO doet niets)</option></select></td></tr>",
@@ -594,6 +622,7 @@ void handleSave(AsyncWebServerRequest* req) {
     snprintf(k, sizeof(k), "zt%d", z + 1);
     if (req->hasParam(k)) { uint16_t v = constrain(req->getParam(k)->value().toInt(), 5, 3600); if (v != zone_burn_s[z]) { zone_burn_s[z] = v; prefs.putUShort(k, v); } }
   }
+  if (req->hasParam("mw")) { uint16_t v = constrain(req->getParam("mw")->value().toInt(), 10, 600); if (v != mov_window_s) { mov_window_s = v; prefs.putUShort("mov_win", v); } }
   if (req->hasParam("ov")) { uint16_t v = constrain(req->getParam("ov")->value().toInt(), 1, 240); if (v != override_min) { override_min = v; prefs.putUShort("ov_min", v); } }
   if (req->hasParam("nf")) { bool v = req->getParam("nf")->value() == "1"; if (v != force_night) { force_night = v; prefs.putBool("nf", v); } }
   for (int d = 0; d < NUM_DOORS; d++) {             // deurcode + betekenis van het contact
