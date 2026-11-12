@@ -1,6 +1,6 @@
 # Overdracht — ACCESS (buitenverlichting, ESP32C6_ACCESS)
 
-*Stand 12 november 2026, 20:50 — Filip Delannoy (FiDel), Zarlardinge (BE)*
+*Stand 12 november 2026, 21:15 — Filip Delannoy (FiDel), Zarlardinge (BE)*
 
 Dit document start een nieuw gesprek met Claude over de buitenverlichting: de Photon R8-ACCESS van vandaag en de ESP32-controllers ACCESS1–3 die nog ontworpen moeten worden. Alle details: [`README.md`](../README.md).
 
@@ -54,3 +54,5 @@ Afwijkingen van de Photon-sketch: zie §6.1 van de standaard.
    - **Plaats van de deuren op het plan (FiDel 12/11):** VD onder het afdak · SD aan de tuinzijde (S), links · AD aan de oostkant op de plaats van de trap (bovenaan, bij E1) · BD binnen de huisomtrek, links van AD.
    - Omschrijvingen per zone (FiDel 12/11): D voordeur · W4 veldkant · S terras · W1 parking · N1 puntgevel rechts · N2 puntgevel links · E binnenplaats.
    - **Open (12/11):** de LED pulseert bij lage waarden (0–20 %) tijdens trage dimtijden (10 s). Vermoedelijk de driver (opstarttijd per PWM-puls): FiDel test vaste lage waarden met dimtijd 0 en PWM 250/500/2000 Hz.
+7. **Sketch v0.3 (luxsensor) klaar** (12/11): `bin/ESP32_C6_ACCESS_v0.3.ino.bin`. TSL2561 op I2C (IO13/IO11), eigen code, automatische versterking; dag/nacht met drempel 150 ± 30 lux en vertraging 1/5 min; `lux`, `nt`, `lb` in `/json`; blok Luxsensor op `/advanced`; huisje in de navigatie. FiDel monteert de TSL2561 van het room-testbord.
+   - **Volgende:** v0.3.1 = lux van een andere ACCESS via `/json` + berekende zonsopgang/-ondergang (NTP) als terugval.

@@ -1,6 +1,6 @@
 # ACCESS-standaard (Zarlar buitenverlichting)
 
-*v0.6 — 12 nov 2026 — Filip Delannoy (FiDel). Status: **vastgelegd** (zones, `/json`-keys, gedrag). Wijzigen alleen met akkoord van FiDel. Sketch: **v0.2.4** (zones, AUTO/MANUEEL, beweging per minuut, dimmen, landingspagina), op het testbord.*
+*v0.7 — 12 nov 2026 — Filip Delannoy (FiDel). Status: **vastgelegd** (zones, `/json`-keys, gedrag). Wijzigen alleen met akkoord van FiDel. Sketch: **v0.3** (zones, AUTO/MANUEEL, dimmen, landingspagina, luxsensor), op het testbord.*
 
 **Functie:** de ACCESS-controllers gebruiken dezelfde processor en hetzelfde shield als de room-controllers, maar bedienen de **buitenverlichting rondom het huis**: PIR-sensoren detecteren beweging, en modules met een PWM-ingang dimmen de lichten. De standaardlampen zijn **2 LED's van 9,5 V / 300 mA in serie**, gevoed met 24 V door de modules.
 
@@ -117,7 +117,7 @@ Per zone in `/settings`: zonecode · muur (W, S, N, E) · aan/uit · helderheid 
 
 ### 2.2 Dag of nacht
 
-1. **Eigen luxsensor** (als die op deze controller zit): nacht als lux ≤ drempel-nacht (standaard 5 lux), dag als lux ≥ drempel-dag (standaard 10 lux). De hysterese voorkomt geflikker bij schemering (waarden van de Photon S-OUTSIDE).
+1. **Eigen luxsensor** (als die op deze controller zit; sketch v0.3): **lichtdrempel** (standaard **150 lux**) met **hysterese ±** (standaard 30 lux) én **vertraging**: nacht als de lux **1 min** ≤ drempel − hysterese blijft, dag als ze **5 min** ≥ drempel + hysterese blijft. Zolang een eigen zone brandt, nooit naar dag (eigen lamp op de sensor). Alles instelbaar (beslist 12/11; vervangt 5/10 lux van S-OUTSIDE). De hysterese vangt de trage schemering op, de vertraging korte pieken (autolampen).
 2. **Lux van een andere ACCESS:** de controllers zonder sensor lezen de lux uit `/json` van de controller met de sensor (instelling: naam of IP, bv. `access1.local`).
 3. **Terugval: berekende zonsopgang en zonsondergang** uit de datum en de ligging van Zarlardinge (instelbaar, met een marge in minuten). Gebruikt als de luxbron langer dan 10 minuten niet antwoordt. Zo blijft elke controller zelfstandig werken.
 
@@ -231,6 +231,7 @@ PIR slot 1 → IO5, slot 2 → IO12, slot 3 → IO2, slot 4 → IO7; deurcontact
 
 | Versie | Datum | Wat |
 |---|---|---|
+| v0.7 | 12 nov 2026 | Dag/nacht: drempel 150 lux ± 30 lux, vertraging 1 min (nacht) / 5 min (dag), nooit naar dag zolang een eigen zone brandt; sketch v0.3 (TSL2561) |
 | v0.6 | 12 nov 2026 | `m<zone>` = triggers per minuut (zoals ROOM); PIR-lijnen zonder interne pull-down, 470 kΩ–1 MΩ extern; sketch v0.2.2 |
 | v0.5 | 12 nov 2026 | Test 12/11: PWM op 3,3 V zonder buffer werkt; AM312 op IO3 niet (pull-up) → nieuwe pinverdeling (PIR IO5, IO12, IO2, IO7; deuren IO3, IO6); plaatsen van ACCESS1–3; sketch v0.1.1 |
 | v0.4 | 11 nov 2026 | Functiebeschrijving, standaardlampen 9,5 V / 300 mA. Sloten blijven op aparte controllers; 4 deurcontacten gepland (ACCESS1: schuifdeur, voordeur; ACCESS3: achterdeur, bovendeur), voorstel pinnen en keys (§4.1). Aansluitingen op de Optionix-plaatjes per controller (zonecodes per slot voor ACCESS1–3), RoomSense 8 vast 3,3 V, testbord (§1.1.2), `lb` −1 en testadres `/set_test`; sketch v0.1 |

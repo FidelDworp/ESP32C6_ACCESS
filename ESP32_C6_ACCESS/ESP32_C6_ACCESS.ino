@@ -11,6 +11,18 @@
 // Updaten: OTA via http://<ip>/update met bin/ESP32_C6_ACCESS_vX.Y.ino.bin
 //
 // ── VERSIEHISTORIE ──────────────────────────────────────────
+// v0.3 (12nov26): LUXSENSOR EN DAG/NACHT (standaard §2.2, eigen sensor).
+//   - TSL2561 op I2C (SDA IO13, SCL IO11, 100 kHz), eigen code volgens de datasheet (geen
+//     bibliotheek): zoekt 0x39/0x29/0x49, 402 ms integratie, automatische versterking (16x in het
+//     donker, 1x bij veel licht), lezen om de 2 s; 3 fouten na elkaar = "ontbreekt", dan om de
+//     minuut opnieuw zoeken. Aan/uit in /settings.
+//   - Dag/nacht: lichtdrempel (standaard 150 lux) met hysterese ± (standaard 30 lux) én
+//     vertraging: nacht als lux ≤ drempel − hysterese gedurende 1 min, dag als lux ≥ drempel +
+//     hysterese gedurende 5 min; zolang een eigen zone brandt nooit naar dag (eigen lamp op de
+//     sensor). Alles instelbaar. Zonder (werkende) sensor: de vaste dag/nacht-instelling.
+//   - /json: lux, nt, lb (0 = eigen sensor, −1 = geen) met echte waarden; geen nieuwe keys.
+//   - Navigatie: huisje (&#127968;) naar de landingspagina, zoals ROOM en Sjalay.
+//   - /advanced: blok Luxsensor (adres, kanalen, versterking, dag/nacht en wachttijd).
 // v0.2.4 (12nov26): LANDINGSPAGINA "/" (landing.h, zoals ROOM): modus (tik in MANUEEL = terug
 //   naar AUTO), dag/nacht, vereenvoudigd grondplan met ALLE zones en deuren op een vaste plaats
 //   per code (één pagina voor ACCESS1–3; alleen de eigen zones/deuren in kleur en bedienbaar),
@@ -77,6 +89,7 @@
 #include <Update.h>
 #include <Preferences.h>
 #include <math.h>                 // v0.2.3: sin() en pow() voor dimmen en gamma
+#include <Wire.h>                 // v0.3: I2C voor de TSL2561
 #include <esp_system.h>
 #include <esp_attr.h>
 #include "hal/usb_serial_jtag_ll.h"
@@ -86,7 +99,7 @@
 #error "ACCESS: zet in de Arduino IDE Tools -> USB CDC On Boot op Disabled (seriele monitor via de poort UART)"
 #endif
 
-#define ACCESS_VERSION "v0.2.4"   // enige plaats met het versienummer
+#define ACCESS_VERSION "v0.3"   // enige plaats met het versienummer
 
 // ── ZONESLOTS (ACCESS_STANDAARD §1.1) ───────────────────────
 //            slot:      1    2    3    4
@@ -131,7 +144,13 @@ uint16_t zone_burn_s[NUM_ZONES] = { 30, 30, 30, 30 };           // brandtijd na 
 uint16_t override_min = 30;                                     // MANUEEL → terug naar AUTO na … min
 uint16_t mov_window_s = 60;                                     // v0.2.2: venster voor m<zone> (s)
 uint8_t  fade_s = 2;                                            // v0.2.3: dimtijd (s), 0 = direct (ROOM: fade_duration)
-bool     force_night  = true;                                   // tot v0.3: dag/nacht vast (true = altijd nacht)
+bool     force_night  = true;                                   // dag/nacht zonder (werkende) luxsensor (true = altijd nacht)
+// v0.3: luxsensor en dag/nacht
+bool     lux_en      = true;      // TSL2561 gebruiken (als hij gevonden wordt)
+uint16_t lux_thr     = 150;       // lichtdrempel (lux)
+uint16_t lux_hyst    = 30;        // hysterese ± (lux)
+uint16_t night_dly_s = 60;        // zo lang onder de band → nacht
+uint16_t day_dly_s   = 300;       // zo lang boven de band → dag
 
 // ── TOESTAND ────────────────────────────────────────────────
 uint8_t  out_pct[NUM_ZONES]   = { 0, 0, 0, 0 };    // helderheid nu (0–100 %); v0.1: alleen TEST
@@ -181,9 +200,9 @@ const char* resetReasonText(esp_reset_reason_t r) {
   }
 }
 
-enum CrumbLoop : uint8_t { CL_NONE = 0, CL_SETUP, CL_WIFI, CL_PIR, CL_OUT, CL_IDLE, CL_COUNT };
+enum CrumbLoop : uint8_t { CL_NONE = 0, CL_SETUP, CL_WIFI, CL_PIR, CL_OUT, CL_IDLE, CL_LUX, CL_COUNT };
 const char* const CRUMB_LOOP_TXT[CL_COUNT] = {
-  "onbekend", "opstarten (setup)", "WiFi-controle", "PIR lezen", "uitgangen", "wachten (rust)"
+  "onbekend", "opstarten (setup)", "WiFi-controle", "PIR lezen", "uitgangen", "wachten (rust)", "luxsensor (I2C)"
 };
 enum CrumbWeb : uint8_t { CW_NONE = 0, CW_HOME, CW_JSON, CW_SETTINGS, CW_SAVE, CW_OTA, CW_TEST, CW_OTHER, CW_ZONE, CW_ADV, CW_COUNT };
 const char* const CRUMB_WEB_TXT[CW_COUNT] = {
@@ -300,6 +319,11 @@ void loadSettings() {
   mov_window_s = constrain(prefs.getUShort("mov_win", 60), 10, 600);
   fade_s       = constrain(prefs.getUChar("fade_s", 2), 0, 10);
   force_night  = prefs.getBool("nf", true);
+  lux_en       = prefs.getBool("lux_en", true);
+  lux_thr      = constrain(prefs.getUShort("lux_thr", 150), 1, 10000);
+  lux_hyst     = constrain(prefs.getUShort("lux_hy", 30), 0, 5000);
+  night_dly_s  = constrain(prefs.getUShort("nt_dly", 60), 0, 3600);
+  day_dly_s    = constrain(prefs.getUShort("dg_dly", 300), 0, 3600);
   for (int d = 0; d < NUM_DOORS; d++) {
     char k[8]; snprintf(k, sizeof(k), "dc%d", d + 1);
     if (prefs.isKey(k)) prefs.getString(k, door_code[d], sizeof(door_code[d]));
@@ -411,7 +435,107 @@ void readDoors() {                      // samen met de PIR's, elke 50 ms; 2 gel
 int motionRecent(int z) { return mov_trig[z]; }   // v0.2.2: triggers in het venster (m<zone>)
 
 // ── ZONES (v0.2, standaard §2.1) ────────────────────────────
-bool isNight() { return force_night; }      // v0.3: lux, andere ACCESS of berekende zon
+// ── LUXSENSOR TSL2561 (v0.3, datasheet TAOS/ams) ────────────
+uint8_t  tsl_addr = 0;            // 0 = niet gevonden
+bool     tsl_gain16 = true;       // true = 16x (donker), false = 1x (veel licht)
+uint8_t  tsl_err = 0;             // fouten na elkaar
+uint32_t tsl_last_try = 0, tsl_last_ok = 0;
+bool     tsl_skip = false;        // eerste lezing na een versterkingswissel overslaan
+uint16_t tsl_ch0 = 0, tsl_ch1 = 0;
+long     lux_now = -1;            // −1 = geen geldige meting
+bool     night_state = true;      // dag/nacht volgens de sensor
+bool     dn_init = false;         // eerste geldige meting bepaalt meteen dag/nacht
+uint32_t dn_since = 0;            // sinds wanneer de lux aan de andere kant van de band ligt (0 = niet)
+
+bool tslWrite(uint8_t reg, uint8_t v) {
+  Wire.beginTransmission(tsl_addr); Wire.write(0x80 | reg); Wire.write(v);
+  return Wire.endTransmission() == 0;
+}
+bool tslRead16(uint8_t reg, uint16_t& v) {
+  Wire.beginTransmission(tsl_addr); Wire.write(0x80 | 0x20 | reg);       // CMD + WORD
+  if (Wire.endTransmission() != 0) return false;
+  if (Wire.requestFrom((int)tsl_addr, 2) != 2) return false;
+  uint8_t lo = Wire.read(), hi = Wire.read();
+  v = (uint16_t)hi << 8 | lo; return true;
+}
+bool tslSetTiming() { return tslWrite(0x01, (tsl_gain16 ? 0x10 : 0x00) | 0x02); }  // 402 ms
+
+void tslFind() {
+  tsl_last_try = millis();
+  const uint8_t adr[3] = { 0x39, 0x29, 0x49 };
+  for (uint8_t a : adr) {
+    tsl_addr = a;
+    Wire.beginTransmission(a); Wire.write(0x80 | 0x0A);
+    if (Wire.endTransmission() != 0) continue;
+    if (Wire.requestFrom((int)a, 1) != 1) continue;
+    uint8_t id = Wire.read();
+    if ((id & 0xF0) != 0x50 && (id & 0xF0) != 0x10) continue;   // TSL2561 / TSL2560
+    if (tslWrite(0x00, 0x03) && tslSetTiming()) {               // aan + timing
+      tsl_err = 0; tsl_skip = true;
+      Serial.printf("[LUX] TSL2561 gevonden op 0x%02X (id 0x%02X)\n", a, id);
+      return;
+    }
+  }
+  tsl_addr = 0;
+  Serial.println(F("[LUX] TSL2561 niet gevonden"));
+}
+
+// Lux volgens de datasheet (pakket T/FN/CL), kanalen genormaliseerd naar 16x en 402 ms
+long tslLux(uint16_t c0, uint16_t c1) {
+  if (c0 == 0) return 0;
+  float ch0 = c0, ch1 = c1;
+  if (!tsl_gain16) { ch0 *= 16.0f; ch1 *= 16.0f; }
+  float r = ch1 / ch0, lux;
+  if      (r <= 0.50f) lux = 0.0304f * ch0 - 0.062f * ch0 * powf(r, 1.4f);
+  else if (r <= 0.61f) lux = 0.0224f * ch0 - 0.031f * ch1;
+  else if (r <= 0.80f) lux = 0.0128f * ch0 - 0.0153f * ch1;
+  else if (r <= 1.30f) lux = 0.00146f * ch0 - 0.00112f * ch1;
+  else lux = 0;
+  return lux < 0 ? 0 : lroundf(lux);
+}
+
+bool zonesLit() { for (int z = 0; z < NUM_ZONES; z++) if (out_pct[z] > 0 || fade_cur[z] > 0.5f) return true; return false; }
+
+void updateDayNight() {           // na elke geldige meting
+  uint32_t now = millis();
+  long lo = (long)lux_thr - lux_hyst, hi = (long)lux_thr + lux_hyst;
+  if (!dn_init) { night_state = lux_now < (long)lux_thr; dn_init = true; dn_since = 0;
+                  Serial.printf("[LUX] start: %s (%ld lux)\n", night_state ? "nacht" : "dag", lux_now); return; }
+  bool other = night_state ? (lux_now >= hi) : (lux_now <= lo);
+  if (night_state && zonesLit()) other = false;                 // eigen lamp op de sensor: nooit naar dag
+  if (!other) { dn_since = 0; return; }
+  if (!dn_since) dn_since = now ? now : 1;
+  uint32_t need = (uint32_t)(night_state ? day_dly_s : night_dly_s) * 1000UL;
+  if (now - dn_since >= need) {
+    night_state = !night_state; dn_since = 0;
+    Serial.printf("[LUX] → %s (%ld lux)\n", night_state ? "nacht" : "dag", lux_now);
+  }
+}
+
+void readLux() {                  // om de 2 s
+  static uint32_t last = 0;
+  if (!lux_en) { lux_now = -1; return; }
+  if (millis() - last < 2000) return;
+  last = millis();
+  if (!tsl_addr) { if (millis() - tsl_last_try >= 60000UL || !tsl_last_try) tslFind(); return; }
+  uint16_t c0, c1;
+  if (!tslRead16(0x0C, c0) || !tslRead16(0x0E, c1)) {
+    if (++tsl_err >= 3) { Serial.println(F("[LUX] 3 fouten → ontbreekt")); tsl_addr = 0; lux_now = -1; }
+    return;
+  }
+  tsl_err = 0;
+  if (tsl_skip) { tsl_skip = false; return; }                   // integratie na wissel nog niet klaar
+  tsl_ch0 = c0; tsl_ch1 = c1;
+  if (tsl_gain16 && (c0 > 60000 || c1 > 60000)) { tsl_gain16 = false; tslSetTiming(); tsl_skip = true; return; }
+  if (!tsl_gain16 && c0 < 500) { tsl_gain16 = true; tslSetTiming(); tsl_skip = true; return; }
+  lux_now = (!tsl_gain16 && (c0 >= 65535 || c1 >= 65535)) ? 40000 : tslLux(c0, c1);   // verzadigd: ±40.000
+  tsl_last_ok = millis();
+  updateDayNight();
+}
+
+// Bron dag/nacht: 0 = eigen sensor, −1 = geen (vaste instelling)
+int dayNightSource() { return (lux_en && tsl_addr && lux_now >= 0 && millis() - tsl_last_ok < 10000UL) ? 0 : -1; }
+bool isNight() { return dayNightSource() == 0 ? night_state : force_night; }
 
 int zoneByCode(const String& c) {
   for (int z = 0; z < NUM_ZONES; z++)
@@ -475,7 +599,7 @@ void pageHead(AsyncResponseStream* p, const char* title, const char* active) {
   p->print(F("<span style=\"font-size:12px;font-weight:normal;opacity:.75\"> &middot; ACCESS " ACCESS_VERSION "</span></div><div class=\"r\">"));
   p->printf("%lu s", (unsigned long)(millis() / 1000));
   p->print(F("</div></div><div class=\"nav\">"));
-  const char* links[][2] = { {"/", "Start"}, {"/advanced", "Technisch"}, {"/settings", "Settings"}, {"/json", "JSON"}, {"/update", "OTA"} };
+  const char* links[][2] = { {"/", "&#127968;"}, {"/advanced", "Technisch"}, {"/settings", "Settings"}, {"/json", "JSON"}, {"/update", "OTA"} };
   for (auto& l : links)
     p->printf("<a href=\"%s\"%s>%s</a>", l[0], strcmp(l[0], active) == 0 ? " class=\"on\"" : "", l[1]);
   p->print(F("</div><div class=\"m\">"));
@@ -508,7 +632,23 @@ void handleStatus(AsyncWebServerRequest* req) {          // v0.2.4: nu op /advan
               DOOR_LOC[d], DOOR_PIN[d], door_code[d][0] ? door_code[d] : "(vrij)", d, d);
   p->print(F("</table><p class=\"dim\">Aan = zone manueel aan (de controller gaat naar MANUEEL); Uit = zone uit en terug naar AUTO. "
              "Dag/nacht met lux volgt in v0.3, deuren in /json in v0.5.</p>"));
-  p->print(F("<h3>Netwerk</h3><table>"));
+  p->print(F("<h3>Luxsensor</h3><table>"));
+  if (!lux_en) p->print(F("<tr><td>Status</td><td class=\"dim\">uit (in /settings)</td></tr>"));
+  else if (!tsl_addr) p->print(F("<tr><td>Status</td><td class=\"bad\">TSL2561 niet gevonden (SDA IO13, SCL IO11); nieuwe poging om de minuut</td></tr>"));
+  else {
+    p->printf("<tr><td>Status</td><td class=\"ok\">TSL2561 op 0x%02X</td></tr>", tsl_addr);
+    p->printf("<tr><td>Lux</td><td><b>%ld</b> lux &middot; kanalen %u / %u &middot; versterking %s</td></tr>",
+              lux_now, tsl_ch0, tsl_ch1, tsl_gain16 ? "16x" : "1x");
+  }
+  {
+    long lo = (long)lux_thr - lux_hyst, hi = (long)lux_thr + lux_hyst;
+    p->printf("<tr><td>Dag/nacht</td><td><b>%s</b> (%s) &middot; nacht &le; %ld lux, dag &ge; %ld lux</td></tr>",
+              isNight() ? "nacht" : "dag", dayNightSource() == 0 ? "eigen sensor" : "vaste instelling", lo, hi);
+    if (dayNightSource() == 0 && dn_since)
+      p->printf("<tr><td>Wissel</td><td>naar %s over %lu s, als het zo blijft</td></tr>", night_state ? "dag" : "nacht",
+                (unsigned long)(((night_state ? day_dly_s : night_dly_s) * 1000UL - (millis() - dn_since)) / 1000));
+  }
+  p->print(F("</table><h3>Netwerk</h3><table>"));
   p->printf("<tr><td>IP</td><td>%s</td></tr><tr><td>Naam</td><td>%s</td></tr><tr><td>WiFi</td><td id=\"w\">%d dBm</td></tr>",
             ap_mode ? "192.168.4.1 (toegangspunt)" : WiFi.localIP().toString().c_str(),
             mdns_ok ? (String(mdns_name) + ".local").c_str() : "&mdash;", (int)WiFi.RSSI());
@@ -567,8 +707,8 @@ void handleStatusJson(AsyncWebServerRequest* req) {
                   door_code[d][0] ? 1 : 0, door_open[d] ? 1 : 0,
                   door_seen[d] ? (long)((millis() - door_last[d]) / 1000) : -1L, (unsigned long)door_count[d]);
   long ov = auto_mode ? 0 : (long)((int32_t)(override_until - millis()) / 1000);
-  snprintf(b + n, sizeof(b) - n, "],\"w\":%d,\"au\":%d,\"ov\":%ld,\"nt\":%d,\"lux\":-1}", (int)WiFi.RSSI(),
-           auto_mode ? 1 : 0, ov < 0 ? 0 : ov, isNight() ? 1 : 0);
+  snprintf(b + n, sizeof(b) - n, "],\"w\":%d,\"au\":%d,\"ov\":%ld,\"nt\":%d,\"lux\":%ld,\"lb\":%d}", (int)WiFi.RSSI(),
+           auto_mode ? 1 : 0, ov < 0 ? 0 : ov, isNight() ? 1 : 0, dayNightSource() == 0 ? lux_now : -1L, dayNightSource());
   req->send(200, "application/json", b);
 }
 
@@ -585,8 +725,8 @@ void handleJson(AsyncWebServerRequest* req) {
   }
   uint32_t heap = ESP.getFreeHeap(), total = ESP.getHeapSize();
   n += snprintf(b + n, sizeof(b) - n,
-    ",\"au\":%d,\"lux\":-1,\"nt\":%d,\"lb\":-1,\"ac\":%d,\"ad\":%u,\"ae\":%u,\"af\":%u}",
-    auto_mode ? 1 : 0, isNight() ? 1 : 0, (int)WiFi.RSSI(), total ? (unsigned)(heap * 100UL / total) : 0,
+    ",\"au\":%d,\"lux\":%ld,\"nt\":%d,\"lb\":%d,\"ac\":%d,\"ad\":%u,\"ae\":%u,\"af\":%u}",
+    auto_mode ? 1 : 0, dayNightSource() == 0 ? lux_now : -1L, isNight() ? 1 : 0, dayNightSource(), (int)WiFi.RSSI(), total ? (unsigned)(heap * 100UL / total) : 0,
     (unsigned)ESP.getMaxAllocHeap(), (unsigned)ESP.getMinFreeHeap());
   req->send(200, "application/json", b);
 }
@@ -619,7 +759,14 @@ void handleSettings(AsyncWebServerRequest* req) {
   p->printf("<tr><td>Dimtijd (zacht aan en uit)</td><td><input type=\"number\" name=\"fd\" min=\"0\" max=\"10\" value=\"%u\" style=\"width:5em\"> s <span class=\"dim\">(0 = direct)</span></td></tr>", fade_s);
   p->printf("<tr><td>Venster beweging (m&lt;zone&gt; = triggers in dit venster)</td><td><input type=\"number\" name=\"mw\" min=\"10\" max=\"600\" value=\"%u\" style=\"width:5em\"> s</td></tr>", mov_window_s);
   p->printf("<tr><td>Override-tijd (MANUEEL → AUTO)</td><td><input type=\"number\" name=\"ov\" min=\"1\" max=\"240\" value=\"%u\" style=\"width:5em\"> min</td></tr>", override_min);
-  p->printf("<tr><td>Dag/nacht (tot v0.3, lux)</td><td><select name=\"nf\"><option value=\"1\"%s>altijd nacht (PIR's werken)</option>"
+  p->print(F("</table><h3>Dag en nacht</h3><table>"));
+  p->printf("<tr><td>Luxsensor (TSL2561)</td><td><select name=\"le\"><option value=\"1\"%s>gebruiken</option><option value=\"0\"%s>uit</option></select></td></tr>",
+            lux_en ? " selected" : "", lux_en ? "" : " selected");
+  p->printf("<tr><td>Lichtdrempel</td><td><input type=\"number\" name=\"lt\" min=\"1\" max=\"10000\" value=\"%u\" style=\"width:6em\"> lux "
+            "&plusmn; <input type=\"number\" name=\"lh\" min=\"0\" max=\"5000\" value=\"%u\" style=\"width:5em\"> lux</td></tr>", lux_thr, lux_hyst);
+  p->printf("<tr><td>Vertraging</td><td>naar nacht <input type=\"number\" name=\"nd\" min=\"0\" max=\"3600\" value=\"%u\" style=\"width:5em\"> s &middot; "
+            "naar dag <input type=\"number\" name=\"dd\" min=\"0\" max=\"3600\" value=\"%u\" style=\"width:5em\"> s</td></tr>", night_dly_s, day_dly_s);
+  p->printf("<tr><td>Zonder (werkende) sensor</td><td><select name=\"nf\"><option value=\"1\"%s>altijd nacht (PIR's werken)</option>"
             "<option value=\"0\"%s>altijd dag (AUTO doet niets)</option></select></td></tr>",
             force_night ? " selected" : "", force_night ? "" : " selected");
   p->print(F("</table><h3>Deuren (reed-contacten)</h3><table>"));
@@ -700,6 +847,11 @@ void handleSave(AsyncWebServerRequest* req) {
   if (req->hasParam("fd")) { uint8_t v = constrain(req->getParam("fd")->value().toInt(), 0, 10); if (v != fade_s) { fade_s = v; prefs.putUChar("fade_s", v); } }
   if (req->hasParam("mw")) { uint16_t v = constrain(req->getParam("mw")->value().toInt(), 10, 600); if (v != mov_window_s) { mov_window_s = v; prefs.putUShort("mov_win", v); } }
   if (req->hasParam("ov")) { uint16_t v = constrain(req->getParam("ov")->value().toInt(), 1, 240); if (v != override_min) { override_min = v; prefs.putUShort("ov_min", v); } }
+  if (req->hasParam("le")) { bool v = req->getParam("le")->value() == "1"; if (v != lux_en) { lux_en = v; prefs.putBool("lux_en", v); if (!v) lux_now = -1; } }
+  if (req->hasParam("lt")) { uint16_t v = constrain(req->getParam("lt")->value().toInt(), 1, 10000); if (v != lux_thr) { lux_thr = v; prefs.putUShort("lux_thr", v); } }
+  if (req->hasParam("lh")) { uint16_t v = constrain(req->getParam("lh")->value().toInt(), 0, 5000); if (v != lux_hyst) { lux_hyst = v; prefs.putUShort("lux_hy", v); } }
+  if (req->hasParam("nd")) { uint16_t v = constrain(req->getParam("nd")->value().toInt(), 0, 3600); if (v != night_dly_s) { night_dly_s = v; prefs.putUShort("nt_dly", v); } }
+  if (req->hasParam("dd")) { uint16_t v = constrain(req->getParam("dd")->value().toInt(), 0, 3600); if (v != day_dly_s) { day_dly_s = v; prefs.putUShort("dg_dly", v); } }
   if (req->hasParam("nf")) { bool v = req->getParam("nf")->value() == "1"; if (v != force_night) { force_night = v; prefs.putBool("nf", v); } }
   for (int d = 0; d < NUM_DOORS; d++) {             // deurcode + betekenis van het contact
     char k[8]; snprintf(k, sizeof(k), "dc%d", d + 1);
@@ -841,6 +993,7 @@ void setup() {
   delay(5);
   for (int d = 0; d < NUM_DOORS; d++) door_open[d] = door_code[d][0] && doorReadOpen(d);   // begintoestand, telt niet als opening
   outputsInit();
+  Wire.begin(I2C_SDA, I2C_SCL); Wire.setClock(100000); Wire.setTimeOut(50);   // v0.3: luxsensor
   Serial.printf("[CFG] %s · IP %s · PWM %u Hz\n", ctrl_name, static_ip, pwm_freq);
   startWiFi();
   setupWeb();
@@ -852,6 +1005,7 @@ void loop() {
   if (ap_mode) dnsServer.processNextRequest();
   crumbL(CL_PIR);   readPIRs();
   crumbL(CL_OUT);   updateZones(); updateFades();
+  crumbL(CL_LUX);   readLux();
   crumbL(CL_IDLE);
   if (restart_requested && (int32_t)(millis() - restart_at) >= 0) {
     for (int z = 0; z < NUM_ZONES; z++) writePwm(z, 0);
