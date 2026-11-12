@@ -11,6 +11,12 @@
 // Updaten: OTA via http://<ip>/update met bin/ESP32_C6_ACCESS_vX.Y.ino.bin
 //
 // ── VERSIEHISTORIE ──────────────────────────────────────────
+// v0.2.1 (12nov26): PIR-ingangen weer ZONDER interne pull-down: de AM312 heeft een zwakke
+//   uitgang (±tientallen kΩ) en haalde met de ±45 kΩ pull-down maar 1,63 V (< drempel, altijd
+//   "rust"). Zweven vermijden: zones zonder PIR op "uit" zetten (worden niet gelezen) en in de
+//   hardware 470 kΩ–1 MΩ pull-down per PIR-lijn (standaard §1.1).
+//   Status- en settingspagina tonen de plaats op de Optionix-plaatjes: "Sense 2 · IO5",
+//   "Option 5 · IO19" (in plaats van "slot 1"), voor montage en foutzoeken.
 // v0.2 (12nov26): ZONES (standaard §2.1, §3.1).
 //   - AUTO: beweging → licht aan op de helderheid van de zone, uit na de brandtijd sinds de
 //     laatste beweging. Dag/nacht komt in v0.3 (lux): tot dan de instelling "dag/nacht"
@@ -62,16 +68,20 @@
 #error "ACCESS: zet in de Arduino IDE Tools -> USB CDC On Boot op Disabled (seriele monitor via de poort UART)"
 #endif
 
-#define ACCESS_VERSION "v0.2"   // enige plaats met het versienummer
+#define ACCESS_VERSION "v0.2.1"   // enige plaats met het versienummer
 
 // ── ZONESLOTS (ACCESS_STANDAARD §1.1) ───────────────────────
 //            slot:      1    2    3    4
 const uint8_t PIR_PIN[4] = { 5,  12,   2,   7 };   // RoomSense 2 · RoomSense 4 · Option 3 · RoomSense 5 (v0.1.1)
 const uint8_t PWM_PIN[4] = { 19, 18,  10,   1 };   // Option 5    · Option 4    · Option 2 · RoomSense 6
+// Plaats op de Optionix-plaatjes (v0.2.1), voor de pagina's
+const char* const PIR_LOC[4] = { "Sense 2", "Sense 4", "Option 3", "Sense 5" };
+const char* const PWM_LOC[4] = { "Option 5", "Option 4", "Option 2", "Sense 6" };
 #define NUM_ZONES   4
 // Deurcontacten (reed naar GND); beide pinnen hebben een pull-up op het shield (v0.1.1)
 #define NUM_DOORS   2
 const uint8_t DOOR_PIN[NUM_DOORS] = { 3, 6 };      // RoomSense 1 · RoomSense 3
+const char* const DOOR_LOC[NUM_DOORS] = { "Sense 1", "Sense 3" };
 #define PWM_BITS    10                              // 0..1023
 #define PWM_FULL    (1 << PWM_BITS)              // 1024 = constant hoog (echt 100 %, geen tik laag)
 #define I2C_SDA     13                              // v0.3: TSL2561
@@ -399,18 +409,18 @@ void handleStatus(AsyncWebServerRequest* req) {
              "<table><tr><th>Zone</th><th>PIR</th><th>Beweging</th><th>Licht</th></tr>"));
   for (int z = 0; z < NUM_ZONES; z++) {
     if (!zone_code[z][0]) continue;                   // vrije slots niet tonen
-    p->printf("<tr><td><b>%s</b><br><span class=\"dim\">slot %d%s</span></td><td>IO%d: <span id=\"p%d\">&hellip;</span></td><td id=\"m%d\">&hellip;</td>"
-              "<td><span id=\"b%d\">%d %%</span> <button class=\"btn\" style=\"padding:4px 10px\" onclick=\"zs(%d,1)\">Aan</button>"
+    p->printf("<tr><td><b>%s</b><br><span class=\"dim\">slot %d%s</span></td><td>%s &middot; IO%d: <span id=\"p%d\">&hellip;</span></td><td id=\"m%d\">&hellip;</td>"
+              "<td><span class=\"dim\">%s &middot; IO%d</span><br><span id=\"b%d\">%d %%</span> <button class=\"btn\" style=\"padding:4px 10px\" onclick=\"zs(%d,1)\">Aan</button>"
               "<button class=\"btn red\" style=\"padding:4px 10px\" onclick=\"zs(%d,0)\">Uit</button><br>"
               "<input type=\"range\" min=\"1\" max=\"100\" value=\"%d\" id=\"r%d\" style=\"width:90%%\" "
               "oninput=\"document.getElementById('b%d').textContent=this.value+' %%'\" onchange=\"zs(%d,1,this.value)\"></td></tr>",
-              zone_code[z], z + 1, zone_en[z] ? "" : " &middot; uit", PIR_PIN[z], z, z,
-              z, out_pct[z], z, z, zone_manual_b[z], z, z, z);
+              zone_code[z], z + 1, zone_en[z] ? "" : " &middot; uit", PIR_LOC[z], PIR_PIN[z], z, z,
+              PWM_LOC[z], PWM_PIN[z], z, out_pct[z], z, z, zone_manual_b[z], z, z, z);
   }
   p->print(F("</table><h3>Deuren</h3><table><tr><th>Ingang</th><th>Deur</th><th>Toestand</th><th>Laatst open</th></tr>"));
   for (int d = 0; d < NUM_DOORS; d++)
-    p->printf("<tr><td>IO%d</td><td><b>%s</b></td><td id=\"d%d\">&hellip;</td><td id=\"e%d\">&hellip;</td></tr>",
-              DOOR_PIN[d], door_code[d][0] ? door_code[d] : "(vrij)", d, d);
+    p->printf("<tr><td>%s &middot; IO%d</td><td><b>%s</b></td><td id=\"d%d\">&hellip;</td><td id=\"e%d\">&hellip;</td></tr>",
+              DOOR_LOC[d], DOOR_PIN[d], door_code[d][0] ? door_code[d] : "(vrij)", d, d);
   p->print(F("</table><p class=\"dim\">Aan = zone manueel aan (de controller gaat naar MANUEEL); Uit = zone uit en terug naar AUTO. "
              "Dag/nacht met lux volgt in v0.3, deuren in /json in v0.5.</p>"));
   p->print(F("<h3>Netwerk</h3><table>"));
@@ -493,14 +503,14 @@ void handleSettings(AsyncWebServerRequest* req) {
   p->print(F("</table><h3>Uitgangen</h3><table>"));
   p->printf("<tr><td>PWM-frequentie (Hz)</td><td><input type=\"number\" name=\"hz\" min=\"100\" max=\"20000\" value=\"%u\"></td></tr>", pwm_freq);
   for (int z = 0; z < NUM_ZONES; z++)
-    p->printf("<tr><td>Slot %d (PIR IO%d, licht IO%d)</td><td>zonecode <input type=\"text\" name=\"zc%d\" maxlength=\"3\" value=\"%s\" "
+    p->printf("<tr><td>Slot %d<br><span class=\"dim\">PIR %s &middot; IO%d<br>licht %s &middot; IO%d</span></td><td>zonecode <input type=\"text\" name=\"zc%d\" maxlength=\"3\" value=\"%s\" "
               "style=\"width:4em\" placeholder=\"vrij\"> &middot; licht aan bij "
               "<label><input type=\"radio\" name=\"pol%d\" value=\"1\"%s> 0 V</label> "
               "<label><input type=\"radio\" name=\"pol%d\" value=\"0\"%s> 3,3 V</label><br>"
               "zone <select name=\"ze%d\"><option value=\"1\"%s>aan</option><option value=\"0\"%s>uit</option></select> &middot; "
               "helderheid <input type=\"number\" name=\"zb%d\" min=\"1\" max=\"100\" value=\"%u\" style=\"width:4.5em\"> %% &middot; "
               "brandtijd <input type=\"number\" name=\"zt%d\" min=\"5\" max=\"3600\" value=\"%u\" style=\"width:5em\"> s</td></tr>",
-              z + 1, PIR_PIN[z], PWM_PIN[z], z + 1, zone_code[z],
+              z + 1, PIR_LOC[z], PIR_PIN[z], PWM_LOC[z], PWM_PIN[z], z + 1, zone_code[z],
               z + 1, active_low[z] ? " checked" : "", z + 1, active_low[z] ? "" : " checked",
               z + 1, zone_en[z] ? " selected" : "", zone_en[z] ? "" : " selected",
               z + 1, zone_bright[z], z + 1, zone_burn_s[z]);
@@ -511,11 +521,11 @@ void handleSettings(AsyncWebServerRequest* req) {
             force_night ? " selected" : "", force_night ? "" : " selected");
   p->print(F("</table><h3>Deuren (reed-contacten)</h3><table>"));
   for (int d = 0; d < NUM_DOORS; d++)
-    p->printf("<tr><td>Ingang %d (IO%d)</td><td>deurcode <input type=\"text\" name=\"dc%d\" maxlength=\"3\" value=\"%s\" "
+    p->printf("<tr><td>Ingang %d<br><span class=\"dim\">%s &middot; IO%d</span></td><td>deurcode <input type=\"text\" name=\"dc%d\" maxlength=\"3\" value=\"%s\" "
               "style=\"width:4em\" placeholder=\"vrij\"> &middot; contact gesloten = deur "
               "<label><input type=\"radio\" name=\"dl%d\" value=\"1\"%s> dicht</label> "
               "<label><input type=\"radio\" name=\"dl%d\" value=\"0\"%s> open</label></td></tr>",
-              d + 1, DOOR_PIN[d], d + 1, door_code[d],
+              d + 1, DOOR_LOC[d], DOOR_PIN[d], d + 1, door_code[d],
               d + 1, door_closed_low[d] ? " checked" : "", d + 1, door_closed_low[d] ? "" : " checked");
   p->print(F("<tr><td colspan=\"2\" class=\"dim\">ACCESS1: SD, VD · ACCESS3: AD, BD · ACCESS2: leeg.</td></tr>"));
   p->print(F("</table><button class=\"btn\" type=\"submit\">Opslaan</button>"
@@ -720,7 +730,7 @@ void setup() {
   delay(300);
   bootDiagnose();
   loadSettings();
-  for (int z = 0; z < NUM_ZONES; z++) pinMode(PIR_PIN[z], INPUT_PULLDOWN);   // v0.2: geen zwevende ingangen
+  for (int z = 0; z < NUM_ZONES; z++) pinMode(PIR_PIN[z], INPUT);   // v0.2.1: geen interne pull (AM312 te zwak); zie standaard §1.1
   for (int d = 0; d < NUM_DOORS; d++) pinMode(DOOR_PIN[d], INPUT_PULLUP);   // + pull-up op het shield
   delay(5);
   for (int d = 0; d < NUM_DOORS; d++) door_open[d] = door_code[d][0] && doorReadOpen(d);   // begintoestand, telt niet als opening

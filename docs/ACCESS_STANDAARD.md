@@ -1,6 +1,6 @@
 # ACCESS-standaard (Zarlar buitenverlichting)
 
-*v0.5 — 12 nov 2026 — Filip Delannoy (FiDel). Status: **vastgelegd** (zones, `/json`-keys, gedrag). Wijzigen alleen met akkoord van FiDel. Sketch: **v0.2** (zones, AUTO/MANUEEL), op het testbord.*
+*v0.5 — 12 nov 2026 — Filip Delannoy (FiDel). Status: **vastgelegd** (zones, `/json`-keys, gedrag). Wijzigen alleen met akkoord van FiDel. Sketch: **v0.2.1** (zones, AUTO/MANUEEL), op het testbord.*
 
 **Functie:** de ACCESS-controllers gebruiken dezelfde processor en hetzelfde shield als de room-controllers, maar bedienen de **buitenverlichting rondom het huis**: PIR-sensoren detecteren beweging, en modules met een PWM-ingang dimmen de lichten. De standaardlampen zijn **2 LED's van 9,5 V / 300 mA in serie**, gevoed met 24 V door de modules.
 
@@ -51,7 +51,9 @@ De lampgroepen zijn die van de plattegrond op FiDels tekening *ACCESS-WASPL bedr
 
 ACCESS2 en ACCESS3 staan in de B&B; W1 en N1 zitten in de hoek waar ACCESS2 komt. Windrichtingen in het Engels, zoals op de tekening: **W, S, N, E**.
 
-- PIR-ingangen: rechtstreeks (een AM312 op 3,3 V heeft geen serieweerstand nodig; 1 kΩ mag).
+- PIR-ingangen: rechtstreeks (een AM312 op 3,3 V heeft geen serieweerstand nodig; 1 kΩ mag). **De sketch zet geen interne pull-up of pull-down** (v0.2.1).
+- **Per PIR-lijn een pull-down van 470 kΩ – 1 MΩ** naar GND op het Optionix-plaatje (aanbevolen, 12/11): houdt een losse of gebroken kabel op 0 V. De AM312 heeft een zwakke uitgang (gedraagt zich als ±tientallen kΩ): met de interne pull-down van ±45 kΩ haalde hij maar 1,63 V (v0.2, test 12/11), te weinig voor "hoog" (±2,5 V). Met 470 kΩ – 1 MΩ blijft hij ±3 V. Een HC-SR501 werkt met elke waarde.
+- Een gebruikte zone zonder aangesloten PIR (bv. op het testbord): in `/settings` op **uit** zetten, dan wordt de ingang niet gelezen.
 - **Waarom (test 12/11):** een AM312 op IO3 werkte niet: zijn uitgang kan de 4,7 kΩ pull-up van de DS18B20-bus niet laag trekken (rust 2,71 V, beweging 3,24 V) → altijd "beweging". Op IO5 (geen pull-up): 3,0 V beweging, 0 V rust. ✅
 - Deurcontacten: reed tussen de pin en GND; de pull-up van het shield volstaat (de sketch zet ook de interne pull-up aan).
 - IO1 heeft op het shield een 10 kΩ pull-up naar 3V3: bij "0 V = aan" blijft dat licht uit tijdens het opstarten.
