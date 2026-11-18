@@ -46,8 +46,8 @@ De lampgroepen zijn die van de plattegrond op FiDels tekening *ACCESS-WASPL bedr
 | ACCESS1 | `D` (voordeur) | W2 + DN, DS + W3 | W | werkt (R8) |
 | ACCESS2 (.83) | `W1` | W1 | W | nog niet in gebruik |
 | ACCESS2 | `N1` | N1 | N | nog niet in gebruik |
-| ACCESS3 (.84) | `N2` | N2 | N | nog niet in gebruik |
-| ACCESS3 | `E` | E1 + E2 | E | nog niet in gebruik |
+| ACCESS3 (.84) | `N2` | N2 | N | nog niet in gebruik · **18/11 gemeten: LED-paar N2 geeft niets** (spots onder de NO-dakrand van de puntgevel, lange ladder; nakijken/vervangen met Maarten) |
+| ACCESS3 | `E` | E1 + E2 (elk een eigen driver van 300 mA, samen op PWM E) | E | nog niet in gebruik · **18/11 gemeten: E1 defect** (meestal ±20 mA, af en toe een flits van 300 mA; spots op de oostelijke dakrand boven de schuine trap, met Maarten) · E2 werkt |
 
 ACCESS2 en ACCESS3 staan in de B&B; W1 en N1 zitten in de hoek waar ACCESS2 komt. Windrichtingen in het Engels, zoals op de tekening: **W, S, N, E**.
 
