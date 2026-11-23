@@ -11,6 +11,16 @@
 // Updaten: OTA via http://<ip>/update met bin/ESP32_C6_ACCESS_vX.Y.ino.bin
 //
 // ── VERSIEHISTORIE ──────────────────────────────────────────
+// v0.3.2 (23nov26): WIFI-HERSTEL NA STROOMPANNE (zoals Dashboard v6.6, HVAC v2.1, ECO v2.1,
+//   S-ENERGY v1.31). Vroeger: lukte WiFi niet binnen 20 s bij de opstart, dan toegangspunt
+//   "ACCESS-<naam>" en checkWiFi() deed daarna NIETS meer (return bij ap_mode) — ook als de STA
+//   vanzelf terugkwam bleven AP en DNS voorgoed aan en startte mDNS nooit. Nu:
+//   - SSID ingesteld (niet leeg, niet "netwerknaam"): nood-AP in AP_STA-modus, de controller
+//     blijft de router proberen (elke 30 s; 60 s zolang het nood-AP open is). Verbonden → AP en
+//     DNS uit, mDNS gestart. Na 10 min zonder netwerk en zonder iemand op het AP → herstart.
+//   - Geen SSID: toegangspunt voor de eerste instelling, zoals vroeger.
+//   - PIR's, deuren, lux en verlichting werkten al los van WiFi; dat blijft zo.
+//   - /advanced en /settings tonen "nood-AP" naast "toegangspunt". /json ongewijzigd.
 // v0.3.1 (12nov26): nota met de vaste IP-adressen en zonecodes van ACCESS1–3 bij "Controller
 //   en netwerk" in /settings (één sketch voor drie controllers: naam en IP altijd samen aanpassen).
 // v0.3 (12nov26): LUXSENSOR EN DAG/NACHT (standaard §2.2, eigen sensor).
@@ -101,7 +111,7 @@
 #error "ACCESS: zet in de Arduino IDE Tools -> USB CDC On Boot op Disabled (seriele monitor via de poort UART)"
 #endif
 
-#define ACCESS_VERSION "v0.3.1"   // enige plaats met het versienummer
+#define ACCESS_VERSION "v0.3.2"   // enige plaats met het versienummer
 
 // ── ZONESLOTS (ACCESS_STANDAARD §1.1) ───────────────────────
 //            slot:      1    2    3    4
@@ -174,7 +184,13 @@ uint8_t  door_raw_n[NUM_DOORS] = { 0, 0 };           // aantal opeenvolgende afw
 bool     door_seen[NUM_DOORS]  = { false, false };
 uint32_t door_last[NUM_DOORS]  = { 0, 0 };           // laatste opening (millis)
 uint32_t door_count[NUM_DOORS] = { 0, 0 };           // aantal openingen sinds opstart
-bool ap_mode = false;
+bool ap_mode = false;                 // toegangspunt actief (setup of nood-AP)
+bool ap_rescue = false;               // v0.3.2: nood-AP (SSID ingesteld, router onbereikbaar)
+uint32_t wifi_lost_since = 0;         // v0.3.2: millis() sinds de verbinding weg is (0 = verbonden)
+uint32_t wifi_last_try = 0;
+#define WIFI_RETRY_MS        30000UL  // nieuwe poging elke 30 s
+#define WIFI_RETRY_AP_MS     60000UL  // met open nood-AP elke 60 s (stoort de AP minder)
+#define WIFI_REBOOT_MS      600000UL  // 10 min zonder netwerk en niemand op het AP → herstart
 bool mdns_ok = false;
 DNSServer dnsServer;
 AsyncWebServer server(80);
@@ -336,6 +352,16 @@ void loadSettings() {
 }
 
 // ── WIFI ────────────────────────────────────────────────────
+bool wifiConfigured() {                 // v0.3.2
+  return wifi_ssid[0] && strcmp(wifi_ssid, "netwerknaam") != 0;
+}
+
+void startMdns() {                      // v0.3.2: na elke (her)verbinding
+  MDNS.end();
+  mdns_ok = MDNS.begin(mdns_name);
+  if (mdns_ok) { MDNS.addService("http", "tcp", 80); Serial.printf("[mDNS] http://%s.local\n", mdns_name); }
+}
+
 void startWiFi() {
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);                 // geen modemslaap: stabieler en sneller antwoord
@@ -345,16 +371,19 @@ void startWiFi() {
     IPAddress gw = ip; gw[3] = 1;
     WiFi.config(ip, gw, IPAddress(255, 255, 255, 0), gw);
   }
-  WiFi.begin(wifi_ssid, wifi_pass);
-  Serial.printf("[WiFi] Verbinden met %s ", wifi_ssid);
-  for (int i = 0; i < 40 && WiFi.status() != WL_CONNECTED; i++) { delay(500); Serial.print('.'); }
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.printf("\n[WiFi] Verbonden: %s (%d dBm)\n", WiFi.localIP().toString().c_str(), (int)WiFi.RSSI());
-    mdns_ok = MDNS.begin(mdns_name);
-    if (mdns_ok) { MDNS.addService("http", "tcp", 80); Serial.printf("[mDNS] http://%s.local\n", mdns_name); }
-    return;
+  if (wifiConfigured()) {
+    WiFi.setAutoReconnect(true);
+    WiFi.begin(wifi_ssid, wifi_pass);
+    Serial.printf("[WiFi] Verbinden met %s ", wifi_ssid);
+    for (int i = 0; i < 40 && WiFi.status() != WL_CONNECTED; i++) { delay(500); Serial.print('.'); }
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.printf("\n[WiFi] Verbonden: %s (%d dBm)\n", WiFi.localIP().toString().c_str(), (int)WiFi.RSSI());
+      startMdns();
+      return;
+    }
   }
   // Geen WiFi: eigen toegangspunt met captive portal, instellen via http://192.168.4.1/settings
+  // v0.3.2: met ingestelde SSID is dit een NOOD-AP — de router wordt verder geprobeerd (checkWiFi).
   WiFi.mode(WIFI_AP_STA);
   char ap[40]; snprintf(ap, sizeof(ap), "ACCESS-%s", ctrl_name);
   WiFi.softAP(ap);
@@ -362,18 +391,60 @@ void startWiFi() {
   WiFi.softAPConfig(ap_ip, ap_ip, IPAddress(255, 255, 255, 0));
   dnsServer.start(53, "*", ap_ip);
   ap_mode = true;
-  Serial.printf("\n[WiFi] Mislukt → toegangspunt %s, http://192.168.4.1/settings\n", ap);
+  if (wifiConfigured()) {
+    ap_rescue = true;
+    wifi_lost_since = millis();
+    wifi_last_try = millis();
+    Serial.printf("\n[WiFi] Router niet bereikbaar → nood-AP %s, blijft de router proberen\n", ap);
+  } else {
+    Serial.printf("\n[WiFi] Geen WiFi ingesteld → toegangspunt %s, http://192.168.4.1/settings\n", ap);
+  }
 }
 
-void checkWiFi() {                      // elke 10 s; herverbinden hoogstens om de 30 s
-  static uint32_t last_check = 0, last_try = 0;
-  if (ap_mode || millis() - last_check < 10000UL) return;
-  last_check = millis();
-  if (WiFi.status() == WL_CONNECTED) return;
-  if (millis() - last_try < 30000UL) return;
-  last_try = millis();
-  Serial.println("[WiFi] Verbinding weg → opnieuw verbinden");
-  WiFi.reconnect();
+// v0.3.2: elke loop() — blijft proberen (ook met nood-AP), sluit het nood-AP zodra verbonden,
+//         herstart na 10 min zonder netwerk en zonder iemand op het AP.
+void checkWiFi() {
+  if (!wifiConfigured()) return;        // eerste instelling: niets te bewaken
+  uint32_t now = millis();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    if (wifi_lost_since) {
+      Serial.printf("[WiFi] Terug verbonden na %lu s: %s\n",
+                    (unsigned long)((now - wifi_lost_since) / 1000), WiFi.localIP().toString().c_str());
+      wifi_lost_since = 0;
+      if (ap_rescue) {
+        dnsServer.stop();
+        WiFi.softAPdisconnect(true);
+        WiFi.mode(WIFI_STA);
+        WiFi.setSleep(false);
+        ap_rescue = false;
+        ap_mode = false;
+        Serial.println("[WiFi] Nood-AP gesloten");
+      }
+      startMdns();
+    }
+    return;
+  }
+
+  // ── Niet verbonden ──
+  if (!wifi_lost_since) {
+    wifi_lost_since = now;
+    wifi_last_try = now;
+    Serial.println("[WiFi] Verbinding weg — blijft proberen");
+  }
+  uint32_t retry_ms = ap_rescue ? WIFI_RETRY_AP_MS : WIFI_RETRY_MS;
+  if (now - wifi_last_try >= retry_ms) {
+    wifi_last_try = now;
+    Serial.printf("[WiFi] Opnieuw verbinden (al %lu s weg)\n", (unsigned long)((now - wifi_lost_since) / 1000));
+    WiFi.disconnect(false, false);
+    WiFi.begin(wifi_ssid, wifi_pass);
+  }
+  if (now - wifi_lost_since >= WIFI_REBOOT_MS && WiFi.softAPgetStationNum() == 0) {
+    Serial.println("[WiFi] 10 min zonder netwerk → herstart");
+    for (int z = 0; z < NUM_ZONES; z++) writePwm(z, 0);
+    delay(100);
+    ESP.restart();
+  }
 }
 
 // ── PIR ─────────────────────────────────────────────────────
@@ -652,7 +723,7 @@ void handleStatus(AsyncWebServerRequest* req) {          // v0.2.4: nu op /advan
   }
   p->print(F("</table><h3>Netwerk</h3><table>"));
   p->printf("<tr><td>IP</td><td>%s</td></tr><tr><td>Naam</td><td>%s</td></tr><tr><td>WiFi</td><td id=\"w\">%d dBm</td></tr>",
-            ap_mode ? "192.168.4.1 (toegangspunt)" : WiFi.localIP().toString().c_str(),
+            ap_mode ? (ap_rescue ? "192.168.4.1 (nood-AP, router wordt geprobeerd)" : "192.168.4.1 (toegangspunt)") : WiFi.localIP().toString().c_str(),
             mdns_ok ? (String(mdns_name) + ".local").c_str() : "&mdash;", (int)WiFi.RSSI());
   p->print(F("</table><script>var CODES=["));
   for (int z = 0; z < NUM_ZONES; z++) p->printf("%s'%s'", z ? "," : "", zone_code[z]);
@@ -800,7 +871,7 @@ void handleSettings(AsyncWebServerRequest* req) {
   p->printf("<tr><td>Geheugen vrij / laagste / grootste blok</td><td>%u / %u / %u KB</td></tr>",
             (unsigned)(ESP.getFreeHeap() / 1024), (unsigned)(ESP.getMinFreeHeap() / 1024), (unsigned)(ESP.getMaxAllocHeap() / 1024));
   p->printf("<tr><td>WiFi</td><td>%s &middot; %d dBm &middot; MAC %s</td></tr>",
-            ap_mode ? "toegangspunt" : (WiFi.status() == WL_CONNECTED ? "verbonden" : "niet verbonden"),
+            ap_mode ? (ap_rescue ? "nood-AP (router wordt geprobeerd)" : "toegangspunt") : (WiFi.status() == WL_CONNECTED ? "verbonden" : "niet verbonden"),
             (int)WiFi.RSSI(), WiFi.macAddress().c_str());
   p->print(F("</table><button class=\"btn red\" onclick=\"if(confirm('Herstarten?'))location.href='/reboot'\">Herstarten</button>"));
   pageFoot(p);
