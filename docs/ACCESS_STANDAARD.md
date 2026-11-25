@@ -16,7 +16,7 @@ Alle buitenverlichting van Zarlardinge draait op **dezelfde hardware en dezelfde
 | Zones | **maximaal 4 per controller**, elk een PIR-ingang en een PWM-uitgang (§1.1) |
 | Lampen | per zone een **LED-driver (module) van 300 mA** (constante stroom) met PWM-stuuringang, gevoed met 24 V. Standaard: **2 LED-lampen 9,5 V / 300 mA in serie** (±2,9 W per lamp) |
 | Luxsensor | **TSL2561** op de I2C-bus (IO13 SDA / IO11 SCL, 3,3 V, adres 0x39), op **één** controller: waar hij het daglicht het best ziet (normaal ACCESS1). Per controller aan/uit in `/settings` |
-| Voeding PIR's | Op het ESP32-shield is **RoomSense 8 vast 3,3 V** (geen jumper meer, zoals op het PhotoniX-shield). AM312 werkt op 3,3 V. Een HC-SR501 heeft 5 V nodig: voeden uit **Option 1 (+5 V)**; zijn uitgang is 3,3 V |
+| Voeding PIR's | Op het ESP32-shield (v1.0 en v2.0) is **RoomSense 8 vast 3,3 V**: er is **geen jumper** (die zat alleen op het PhotoniX-shield). **RoomSense levert alleen 3,3 V; de Option-aansluiting heeft zowel 3,3 V als 5 V.** AM312 werkt op 3,3 V. Een HC-SR501 of andere 5 V-sensor: voeden uit **Option 1 (+5 V)**, en **altijd nakijken dat zijn uitgangen onder 3,3 V blijven** (de ESP32-C6 verdraagt geen 5 V op een pin). De HC-SR501 geeft 3,3 V uit (bevestigd 25/11) |
 
 **Gouden regel: een ESP32-pin ziet nooit meer dan 3,3 V.** Elke signaalader meten vóór aansluiten.
 
@@ -233,7 +233,7 @@ PIR slot 1 → IO5, slot 2 → IO12, slot 3 → IO2, slot 4 → IO7; deurcontact
 
 | Versie | Datum | Wat |
 |---|---|---|
-| v0.8 | 25 nov 2026 | §1.2: link naar het geschrapte bufferschema in ESP32C6_ROOMS weg, alleen de regel voor een buffer als het ooit nodig blijkt; HC-SR501-regels (1 kΩ in serie, IO3 max 1 kΩ) overgenomen; brugje Option 1 op shield v1.0 onthouden |
+| v0.8 | 25 nov 2026 | §1.2: link naar het geschrapte bufferschema in ESP32C6_ROOMS weg, alleen de regel voor een buffer als het ooit nodig blijkt; HC-SR501-regels (1 kΩ in serie, IO3 max 1 kΩ) overgenomen; brugje Option 1 op shield v1.0 onthouden; geen jumper op RoomSense 8 (vast 3,3 V), 5 V-sensoren uit Option met uitgangen onder 3,3 V |
 | v0.7 | 12 nov 2026 | Dag/nacht: drempel 150 lux ± 30 lux, vertraging 1 min (nacht) / 5 min (dag), nooit naar dag zolang een eigen zone brandt; sketch v0.3 (TSL2561) |
 | v0.6 | 12 nov 2026 | `m<zone>` = triggers per minuut (zoals ROOM); PIR-lijnen zonder interne pull-down, 470 kΩ–1 MΩ extern; sketch v0.2.2 |
 | v0.5 | 12 nov 2026 | Test 12/11: PWM op 3,3 V zonder buffer werkt; AM312 op IO3 niet (pull-up) → nieuwe pinverdeling (PIR IO5, IO12, IO2, IO7; deuren IO3, IO6); plaatsen van ACCESS1–3; sketch v0.1.1 |
