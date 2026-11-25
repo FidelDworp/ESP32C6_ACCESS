@@ -1,6 +1,6 @@
 # ACCESS-standaard (Zarlar buitenverlichting)
 
-*v0.7 — 12 nov 2026 — Filip Delannoy (FiDel). Status: **vastgelegd** (zones, `/json`-keys, gedrag). Wijzigen alleen met akkoord van FiDel. Sketch: **v0.3.1** (zones, AUTO/MANUEEL, dimmen, landingspagina, luxsensor), op het testbord.*
+*v0.8 — 25 nov 2026 — Filip Delannoy (FiDel). Status: **vastgelegd** (zones, `/json`-keys, gedrag). Wijzigen alleen met akkoord van FiDel. Sketch: **v0.3.1** (zones, AUTO/MANUEEL, dimmen, landingspagina, luxsensor), op het testbord.*
 
 **Functie:** de ACCESS-controllers gebruiken dezelfde processor en hetzelfde shield als de room-controllers, maar bedienen de **buitenverlichting rondom het huis**: PIR-sensoren detecteren beweging, en modules met een PWM-ingang dimmen de lichten. De standaardlampen zijn **2 LED's van 9,5 V / 300 mA in serie**, gevoed met 24 V door de modules.
 
@@ -52,6 +52,7 @@ De lampgroepen zijn die van de plattegrond op FiDels tekening *ACCESS-WASPL bedr
 ACCESS2 en ACCESS3 staan in de B&B; W1 en N1 zitten in de hoek waar ACCESS2 komt. Windrichtingen in het Engels, zoals op de tekening: **W, S, N, E**.
 
 - PIR-ingangen: rechtstreeks (een AM312 op 3,3 V heeft geen serieweerstand nodig; 1 kΩ mag). **De sketch zet geen interne pull-up of pull-down** (v0.2.1).
+- **HC-SR501:** voeding 5 V uit **Option 1**, uitgang 3,3 V; **1 kΩ in serie** op de signaalader. Komt er ooit een PIR op **IO3**: niet groter dan 1 kΩ, want IO3 heeft op het shield een 4,7 kΩ pull-up voor de T-BUS (overgenomen uit het geschrapte §5 van `ESP32C6_ROOMS/docs/aansluitingen.md`, 25/11).
 - **Per PIR-lijn een pull-down van 470 kΩ – 1 MΩ** naar GND op het Optionix-plaatje (aanbevolen, 12/11): houdt een losse of gebroken kabel op 0 V. De AM312 heeft een zwakke uitgang (gedraagt zich als ±tientallen kΩ): met de interne pull-down van ±45 kΩ haalde hij maar 1,63 V (v0.2, test 12/11), te weinig voor "hoog" (±2,5 V). Met 470 kΩ – 1 MΩ blijft hij ±3 V. Een HC-SR501 werkt met elke waarde.
 - Een gebruikte zone zonder aangesloten PIR (bv. op het testbord): in `/settings` op **uit** zetten, dan wordt de ingang niet gelezen.
 - **Waarom (test 12/11):** een AM312 op IO3 werkte niet: zijn uitgang kan de 4,7 kΩ pull-up van de DS18B20-bus niet laag trekken (rust 2,71 V, beweging 3,24 V) → altijd "beweging". Op IO5 (geen pull-up): 3,0 V beweging, 0 V rust. ✅
@@ -90,7 +91,7 @@ Elke connector krijgt een **Optionix-plaatje** met 8 soldeercontacten. Zelfde ve
 Zonecodes in `/settings`: ACCESS1 slot 1 `D`, 2 `W4`, 3 `S` · ACCESS2 slot 1 `W1`, 2 `N1` · ACCESS3 slot 1 `N2`, 2 `E` (beslist 11/11). De oude R8-klemmen MOV-E, PWM-E, MOV-N1 en PWM-N1 worden op ACCESS1 **niet** aangesloten.
 
 - Gemeten 3,3 V op IO3 = pull-up 4,7 kΩ (T-BUS) op het shield; op IO6 = pull-up van de DHT-lijn (beide ideaal voor de reed-contacten); op IO1 = PWM uit + pull-up 10 kΩ; op de andere PWM-pinnen = uitgang uit (actief laag).
-- ✅ **Option 1 = +5 V: opgelost (12/11).** Op **shield v1.0** heet die pin "reserve" en is hij niet verbonden: daar moet een **brugje naar 5 V** gesoldeerd worden (zo gedaan op het testbord). Vanaf **shield v2.0** is hij vast met 5 V verbonden.
+- ✅ **Option 1 = +5 V: opgelost (12/11).** Op **shield v1.0** heet die pin "reserve" en is hij niet verbonden: daar moet een **brugje naar 5 V** gesoldeerd worden (zo gedaan op het testbord). Vanaf **shield v2.0** is hij vast met 5 V verbonden. **Onthouden:** elke controller die nog op een shield v1.0 gebouwd wordt en een HC-SR501 of een andere 5 V-sensor krijgt, heeft dat brugje nodig.
 
 **Testbord:** de LED-driver op **slot 1**: stuuringang op **Option 5 (IO19)**, massa op **Option 7 (GND)**; een PIR op **RoomSense 1 (IO3)**, voeding RoomSense 8, massa RoomSense 7, 1 kΩ in serie op de signaalader.
 - **Gemeenschappelijke massa:** de min van de 24 V-voeding moet aan de GND van de ESP32, tenzij de stuuringang van de driver galvanisch gescheiden is (nakijken op de driver).
@@ -99,7 +100,7 @@ Zonecodes in `/settings`: ACCESS1 slot 1 `D`, 2 `W4`, 3 `S` · ACCESS2 slot 1 `W
 
 - De Photon R8-ACCESS stuurt dezelfde drivers vandaag met **3,3 V**, en dat werkt. **Beslist:** eerst zonder buffer.
 - **Getest 12/11 (testbord, v0.1, 1 kHz):** driver 300 mA met twee LED's op 24 V, rechtstreeks op IO19 zonder buffer: **0 V = 100 % aan, 3,3 V = uit**, dimmen werkt. **Geen buffer nodig.**
-- Alleen als dat niet lukt: per uitgang een **buffer 3,3 → 5 V** (74AHCT1G125, of één 74HCT125 voor 4 uitgangen) met 10 kΩ pull-up op de ingang, zodat de lichten uit blijven tijdens het opstarten. Schema: [`ESP32C6_ROOMS/docs/aansluitingen.md` §5](https://github.com/FidelDworp/ESP32C6_ROOMS/blob/main/docs/aansluitingen.md).
+- Alleen als het ooit toch nodig blijkt: **74AHCT1G125 per uitgang, of één 74HCT125 voor 4 uitgangen**, met **10 kΩ pull-up naar 3V3 op de ingang**, zodat de lichten uit blijven tijdens het opstarten.
 - Polariteit: vandaag **0 V = licht aan** (uitgangen actief laag). Per zone omkeerbaar in `/settings`.
 
 ## 2. Gedrag
@@ -232,6 +233,7 @@ PIR slot 1 → IO5, slot 2 → IO12, slot 3 → IO2, slot 4 → IO7; deurcontact
 
 | Versie | Datum | Wat |
 |---|---|---|
+| v0.8 | 25 nov 2026 | §1.2: link naar het geschrapte bufferschema in ESP32C6_ROOMS weg, alleen de regel voor een buffer als het ooit nodig blijkt; HC-SR501-regels (1 kΩ in serie, IO3 max 1 kΩ) overgenomen; brugje Option 1 op shield v1.0 onthouden |
 | v0.7 | 12 nov 2026 | Dag/nacht: drempel 150 lux ± 30 lux, vertraging 1 min (nacht) / 5 min (dag), nooit naar dag zolang een eigen zone brandt; sketch v0.3 (TSL2561) |
 | v0.6 | 12 nov 2026 | `m<zone>` = triggers per minuut (zoals ROOM); PIR-lijnen zonder interne pull-down, 470 kΩ–1 MΩ extern; sketch v0.2.2 |
 | v0.5 | 12 nov 2026 | Test 12/11: PWM op 3,3 V zonder buffer werkt; AM312 op IO3 niet (pull-up) → nieuwe pinverdeling (PIR IO5, IO12, IO2, IO7; deuren IO3, IO6); plaatsen van ACCESS1–3; sketch v0.1.1 |
