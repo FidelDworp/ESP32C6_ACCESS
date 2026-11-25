@@ -16,7 +16,7 @@ Alle buitenverlichting van Zarlardinge draait op **dezelfde hardware en dezelfde
 | Zones | **maximaal 4 per controller**, elk een PIR-ingang en een PWM-uitgang (§1.1) |
 | Lampen | per zone een **LED-driver (module) van 300 mA** (constante stroom) met PWM-stuuringang, gevoed met 24 V. Standaard: **2 LED-lampen 9,5 V / 300 mA in serie** (±2,9 W per lamp) |
 | Luxsensor | **TSL2561** op de I2C-bus (IO13 SDA / IO11 SCL, 3,3 V, adres 0x39), op **één** controller: waar hij het daglicht het best ziet (normaal ACCESS1). Per controller aan/uit in `/settings` |
-| Voeding PIR's | Op het ESP32-shield (v1.0 en v2.0) is **RoomSense 8 vast 3,3 V**: er is **geen jumper** (die zat alleen op het PhotoniX-shield). **RoomSense levert alleen 3,3 V; de Option-aansluiting heeft zowel 3,3 V als 5 V.** AM312 werkt op 3,3 V. Een HC-SR501 of andere 5 V-sensor: voeden uit **Option 1 (+5 V)**, en **altijd nakijken dat zijn uitgangen onder 3,3 V blijven** (de ESP32-C6 verdraagt geen 5 V op een pin). De HC-SR501 geeft 3,3 V uit (bevestigd 25/11) |
+| Voeding PIR's | Op het ESP32-shield (v1.0 en v2.0) is **RoomSense 8 vast 3,3 V**: er is **geen jumper** (die zat alleen op het PhotoniX-shield). **RoomSense levert alleen 3,3 V; de Option-aansluiting heeft zowel 3,3 V als 5 V.** AM312 werkt op 3,3 V. Een HC-SR501 of andere 5 V-sensor: voeden uit **Option 1 (+5 V)**, en **altijd nakijken dat zijn uitgangen onder 3,3 V blijven** (de ESP32-C6 verdraagt geen 5 V op een pin). De uitgang van een HC-SR501 is 3,3 V |
 
 **Gouden regel: een ESP32-pin ziet nooit meer dan 3,3 V.** Elke signaalader meten vóór aansluiten.
 
